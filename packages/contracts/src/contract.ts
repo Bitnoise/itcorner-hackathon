@@ -6,6 +6,7 @@ import { documentsContract } from './documents';
 import { doctorContract } from './doctor';
 import { appointmentsContract } from './appointments';
 import { visitsContract } from './visits';
+import { probeContract } from './probe';
 
 const c = initContract();
 
@@ -20,6 +21,7 @@ export const apiContract = c.router({
   doctor: doctorContract,
   appointments: appointmentsContract,
   visits: visitsContract,
+  probe: probeContract,
 });
 
 export type ApiContract = typeof apiContract;

@@ -5,7 +5,7 @@ import { createProbeRouter } from './probe-router';
 const SECRET = 'test-secret-that-is-at-least-32-chars-long';
 
 function makeLogger() {
-  return { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+  return { info: () => {}, warn: () => {}, error: () => {} };
 }
 
 function makeRouter() {

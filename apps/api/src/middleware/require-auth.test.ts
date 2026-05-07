@@ -10,7 +10,6 @@ function makeLogger(): Logger & { warns: Array<[string, unknown?]> } {
     info: () => {},
     warn: (event: string, ctx?: unknown) => warns.push([event, ctx]),
     error: () => {},
-    debug: () => {},
     warns,
   };
 }
