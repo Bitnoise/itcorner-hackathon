@@ -26,7 +26,6 @@ describe('createLogger redaction', () => {
     expect(lines).toHaveLength(1);
     const serialized = lines[0]!;
 
-    // No raw secret value should ever appear in the emitted line.
     expect(serialized).not.toContain('super-secret');
     expect(serialized).not.toContain('eyJhbGciOiJIUzI1NiJ9.payload.sig');
     expect(serialized).not.toContain('nested-secret');
@@ -54,5 +53,41 @@ describe('createLogger redaction', () => {
     expect(entry.retries[0]!.password).toBe('[REDACTED]');
     expect(entry.retries[0]!.code).toBe(1);
     expect(entry.retries[1]!.password).toBe('[REDACTED]');
+  });
+
+  it('redacts authorization and jwt fields (added in Slice 2)', () => {
+    const lines: string[] = [];
+    const logger = createLogger({ sink: (line) => lines.push(line) });
+
+    logger.info('auth.request', {
+      authorization: 'Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig',
+      jwt: 'eyJhbGciOiJIUzI1NiJ9.payload.sig',
+      headers: {
+        authorization: 'Bearer nested-token',
+      },
+    });
+
+    const serialized = lines[0]!;
+    expect(serialized).not.toContain('Bearer eyJhbGciOiJIUzI1NiJ9');
+    const entry = JSON.parse(serialized) as {
+      authorization: string;
+      jwt: string;
+      headers: { authorization: string };
+    };
+    expect(entry.authorization).toBe('[REDACTED]');
+    expect(entry.jwt).toBe('[REDACTED]');
+    expect(entry.headers.authorization).toBe('[REDACTED]');
+  });
+
+  it('redacts password_hash field', () => {
+    const lines: string[] = [];
+    const logger = createLogger({ sink: (line) => lines.push(line) });
+
+    logger.info('user.created', { password_hash: '$2b$12$hash' });
+
+    const serialized = lines[0]!;
+    expect(serialized).not.toContain('$2b$12$hash');
+    const entry = JSON.parse(serialized) as { password_hash: string };
+    expect(entry.password_hash).toBe('[REDACTED]');
   });
 });
