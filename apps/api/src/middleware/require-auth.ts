@@ -39,14 +39,20 @@ export function requireAuth(deps: {
   };
 }
 
+const VALID_ROLES = new Set<string>(['doctor', 'patient']);
+
 export function requireRole(
   roles: UserRole[],
   deps: { logger: Logger },
 ): MiddlewareHandler<Env> {
   return async (c, next) => {
-    const role = c.get('userRole');
-    if (!role || !roles.includes(role)) {
-      deps.logger.warn('auth.rbac.denied', { role, requiredRoles: roles });
+    const role = c.get('userRole') as string | undefined;
+    if (!role || !VALID_ROLES.has(role) || !roles.includes(role as UserRole)) {
+      deps.logger.warn('auth.rbac.denied', {
+        user_id: c.get('userId'),
+        role,
+        path: c.req.path,
+      });
       return c.json({ error: 'Forbidden' }, 403);
     }
     await next();

@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { createRoute, useNavigate } from '@tanstack/react-router';
+import { createRoute, useNavigate, redirect, isRedirect } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { rootRoute } from './__root';
@@ -23,6 +23,14 @@ export const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
   validateSearch: (search) => loginSearchSchema.parse(search),
+  beforeLoad: async ({ context: { queryClient } }) => {
+    try {
+      const user = await queryClient.ensureQueryData(currentUserQueryOptions);
+      throw redirect({ to: `/${user.role}` });
+    } catch (e) {
+      if (isRedirect(e)) throw e;
+    }
+  },
   component: LoginPage,
 });
 

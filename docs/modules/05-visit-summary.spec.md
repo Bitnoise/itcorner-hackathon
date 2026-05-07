@@ -1,0 +1,58 @@
+# visit-summary Feature Specification
+
+## Summary
+The Visit Summary module closes the appointment lifecycle by letting a doctor iteratively draft a structured summary (diagnosis, recommendations, medications, referrals) and then explicitly mark the visit as completed, at which point the patient gains read-only access to the summary via their visit history. It introduces the `visit_summaries` table (upsert pattern), two doctor-scoped endpoints, one patient-scoped endpoint, shared Zod contracts, and corresponding frontend UI sections for both roles. The module enforces role-based ownership, status-gated write access, and idempotent state transitions to ensure data integrity across the visit lifecycle.
+
+## Functional Requirements
+1. **FR-001** A doctor can upsert a structured visit summary (fields: diagnosis, recommendations, medications, referrals) for an appointment with status `scheduled` any number of times via PUT /appointments/:id/summary; each call creates or overwrites the `visit_summaries` row for that appointment.
+2. **FR-002** A doctor can explicitly complete a visit by calling POST /appointments/:id/complete, which atomically transitions the appointment status from `scheduled` to `completed`; subsequent calls to the same endpoint when status is already `completed` are idempotent and return HTTP 200 with no side effects.
+3. **FR-003** Once an appointment is `completed`, the PUT /appointments/:id/summary endpoint returns HTTP 403, preventing any further edits to the visit summary.
+4. **FR-004** A patient can retrieve a paginated list of their own `completed` appointments with summary metadata via GET /patients/me/visit-history, ordered by visit date descending (newest first).
+5. **FR-005** A patient can retrieve the full structured summary for a single `completed` appointment via GET /patients/me/visit-history/:id, which returns the summary fields plus doctor name, doctor specialization, and visit date.
+6. **FR-006** The GET /patients/me/visit-history/:id endpoint returns HTTP 404 (with no body fields that reveal existence) when the requested appointment exists but has status `scheduled`, preventing existence leakage to the patient.
+7. **FR-007** The `visit_summaries` table is populated exclusively via an upsert on the doctor's PUT endpoint — there is no separate 'open summary' or 'create summary' step.
+
+## Non-Functional Requirements
+- **NFR-001** All API endpoints introduced by this module must respond in under 200 ms at p95 under a load of 50 concurrent users against a Postgres instance with 10,000 appointment rows.
+- **NFR-002** Database writes to `visit_summaries` must be executed inside a transaction that also updates the `appointments` status row when completing a visit, ensuring no partial state is persisted on failure.
+- **NFR-003** All endpoints must emit structured logs (JSON) containing at minimum: request id, authenticated user id, appointment id, HTTP status code, and response latency in milliseconds, enabling observability without exposing PHI in log lines.
+- **NFR-004** The module must be covered by Vitest unit/integration tests achieving at least 90% line coverage for service and repository layers, and at least one Playwright e2e test per user-facing UI path.
+
+## Edge Cases
+- **EC-001** Completing an already-completed appointment (idempotent transition): POST /appointments/:id/complete called when appointment status is already `completed` must return HTTP 200 with the current appointment object and must NOT insert a duplicate `visit_summaries` row or emit a domain event.
+- **EC-002** Upserting a summary with identical content as the existing row: PUT /appointments/:id/summary with a body matching the stored summary exactly must return HTTP 200, perform an upsert (no error on conflict), and leave `updated_at` updated to the current timestamp.
+- **EC-003** Patient requests summary for a scheduled appointment that belongs to them: GET /patients/me/visit-history/:id must return HTTP 404 with an empty body (no fields), not HTTP 403, to avoid confirming existence of a scheduled appointment.
+- **EC-004** Doctor submits PUT /appointments/:id/summary for a valid appointment that has no existing `visit_summaries` row: the endpoint must INSERT a new row and return HTTP 200 with the created summary, treating first save identically to a subsequent save.
+- **EC-005** Doctor calls POST /appointments/:id/complete for an appointment that has no `visit_summaries` row yet: the endpoint must return HTTP 422 with message 'Visit summary must be saved before completing the appointment' and leave the appointment status as `scheduled`.
+
+## Validation Rules
+- **VR-001** The `diagnosis` field on PUT /appointments/:id/summary is required and must be a non-empty string of at most 2000 characters; if absent or empty the API returns HTTP 422 with message 'diagnosis is required'.
+- **VR-002** The `medications` field on PUT /appointments/:id/summary, when provided, must be an array of objects each containing `name` (string, required) and `dosage` (string, optional); if any element is missing `name` the API returns HTTP 422 with message 'each medication must have a name'.
+- **VR-003** The `recommendations` field on PUT /appointments/:id/summary, when provided, must be a string of at most 5000 characters; if it exceeds 5000 characters the API returns HTTP 422 with message 'recommendations must be 5000 characters or fewer'.
+- **VR-004** The `referrals` field on PUT /appointments/:id/summary, when provided, must be an array of strings each at most 500 characters; if any element exceeds 500 characters the API returns HTTP 422 with message 'each referral must be 500 characters or fewer'.
+
+## Error Handling
+- **EH-001** Doctor attempts PUT /appointments/:id/summary for an appointment id that does not exist in the database: HTTP 404 with body { error: 'Appointment not found' }. No row is inserted or updated in `visit_summaries`. No rollback required (read check precedes write).
+- **EH-002** Doctor attempts PUT /appointments/:id/summary or POST /appointments/:id/complete for an appointment that exists but belongs to a different doctor: HTTP 403 with body { error: 'Forbidden' }. No mutation is performed. The response must not confirm whether the appointment exists.
+- **EH-003** Doctor attempts PUT /appointments/:id/summary for an appointment whose status is `completed`: HTTP 403 with body { error: 'Visit summary cannot be edited after the appointment is completed' }. No upsert is executed.
+- **EH-004** Upsert transaction to `visit_summaries` fails at the database level (e.g., constraint violation, connection timeout): HTTP 500 with body { error: 'Internal server error' }. The transaction is rolled back; the `appointments` row is unchanged. The error is logged with full stack trace and request id.
+- **EH-005** Patient attempts GET /patients/me/visit-history/:id for an appointment that belongs to a different patient: HTTP 404 with an empty body (no fields). This prevents confirming existence of another patient's appointment.
+
+## Authorization
+- **AUTH-001** A user with role `doctor` may call PUT /appointments/:id/summary and POST /appointments/:id/complete only for appointments where `appointments.doctor_id` equals the authenticated doctor's user id; any mismatch returns HTTP 403.
+- **AUTH-002** A user with role `patient` may call GET /patients/me/visit-history and GET /patients/me/visit-history/:id only for appointments where `appointments.patient_id` equals the authenticated patient's user id; accessing another patient's records returns HTTP 404 with no body.
+- **AUTH-003** A user with role `patient` is denied access to all doctor-scoped endpoints (PUT /appointments/:id/summary, POST /appointments/:id/complete); the API returns HTTP 403 with body { error: 'Forbidden' } without executing any business logic.
+- **AUTH-004** A user with role `doctor` is denied access to patient-scoped visit-history endpoints (GET /patients/me/visit-history, GET /patients/me/visit-history/:id); the API returns HTTP 403 with body { error: 'Forbidden' }.
+- **AUTH-005** Unauthenticated requests (missing or invalid JWT) to any endpoint in this module return HTTP 401 with body { error: 'Unauthorized' } before any authorization or business logic is evaluated.
+
+## Acceptance Criteria
+- [ ] **AC-001** Given a doctor is authenticated and has an appointment with status `scheduled` that belongs to them, when they send PUT /appointments/:id/summary with a valid body containing diagnosis, recommendations, medications, and referrals, then the server returns HTTP 200 and a new row is inserted into the `visit_summaries` table associated with that appointment id.
+- [ ] **AC-002** Given a doctor is authenticated and has an appointment with status `scheduled` that already has an existing `visit_summaries` row, when they send PUT /appointments/:id/summary with an updated diagnosis value, then the server returns HTTP 200 and the existing `visit_summaries` row is overwritten with the new field values rather than a duplicate row being created.
+- [ ] **AC-003** Given a doctor is authenticated and has an appointment with status `scheduled` that belongs to them, when they send POST /appointments/:id/complete, then the server returns HTTP 200 and the appointment's status field in the database transitions to `completed`.
+- [ ] **AC-004** Given a doctor is authenticated and has an appointment whose status is already `completed`, when they send POST /appointments/:id/complete again, then the server returns HTTP 200, no new rows are inserted into `visit_summaries`, and the appointment's status remains `completed` with no other side effects.
+- [ ] **AC-005** Given a doctor is authenticated and has an appointment with status `completed`, when they send PUT /appointments/:id/summary with a valid body, then the server returns HTTP 403 with body { "error": "Visit summary cannot be edited after the appointment is completed" } and no upsert is executed on the `visit_summaries` table.
+- [ ] **AC-006** Given a patient is authenticated and has multiple `completed` appointments, when they send GET /patients/me/visit-history, then the server returns HTTP 200 with a paginated list containing only their own `completed` appointments ordered by visit date descending with the newest appointment appearing first.
+- [ ] **AC-007** Given a patient is authenticated and has no `completed` appointments, when they send GET /patients/me/visit-history, then the server returns HTTP 200 with an empty list and no appointments belonging to other patients are included.
+- [ ] **AC-008** Given a patient is authenticated and has a `completed` appointment with an associated `visit_summaries` row, when they send GET /patients/me/visit-history/:id for that appointment id, then the server returns HTTP 200 with a response body containing the summary fields (diagnosis, recommendations, medications, referrals), the doctor's name, the doctor's specialization, and the visit date.
+- [ ] **AC-009** Given a patient is authenticated and has an appointment with status `scheduled`, when they send GET /patients/me/visit-history/:id for that appointment id, then the server returns HTTP 404 with an empty body containing no fields that reveal the existence or status of the appointment.
+- [ ] **AC-010** Given a doctor is authenticated and has an appointment with status `scheduled` that has no existing `visit_summaries` row, when they send PUT /appointments/:id/summary with a valid body for the first time, then the server returns HTTP 200 and exactly one new row is inserted into the `visit_summaries` table with no prior 'open summary' or 'create summary' step required.
