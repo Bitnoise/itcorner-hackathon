@@ -50,13 +50,15 @@ export function verifyJwt(token: string, secret: string): JwtVerifyResult {
   let payload: JwtPayload;
   try {
     const parsed: unknown = JSON.parse(base64UrlDecode(claims).toString());
+    const p = parsed as Record<string, unknown>;
+    const role = p['role'];
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
-      typeof (parsed as Record<string, unknown>)['sub'] !== 'string' ||
-      typeof (parsed as Record<string, unknown>)['role'] !== 'string' ||
-      typeof (parsed as Record<string, unknown>)['iat'] !== 'number' ||
-      typeof (parsed as Record<string, unknown>)['exp'] !== 'number'
+      typeof p['sub'] !== 'string' ||
+      (role !== 'doctor' && role !== 'patient') ||
+      typeof p['iat'] !== 'number' ||
+      typeof p['exp'] !== 'number'
     ) {
       return { ok: false, reason: 'invalid' };
     }
