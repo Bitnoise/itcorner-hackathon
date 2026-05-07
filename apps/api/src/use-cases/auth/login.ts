@@ -1,9 +1,14 @@
 import bcrypt from 'bcryptjs';
+import { createHash } from 'node:crypto';
 import type { Db } from '../../infrastructure/db';
 import { findUserByEmail } from '../../infrastructure/user-repository';
 import { signJwt } from '../../lib/jwt';
 import type { Logger } from '../../lib/logger';
 import type { AppConfig } from '../../config';
+
+function hashEmail(email: string): string {
+  return createHash('sha256').update(email.toLowerCase()).digest('hex');
+}
 
 export type LoginResult =
   | { ok: true; token: string }
@@ -18,13 +23,13 @@ export async function login(
     const user = await findUserByEmail(deps.db, email);
 
     if (!user) {
-      deps.logger.warn('auth.login.failed', { email });
+      deps.logger.warn('auth.login.failed', { emailHash: hashEmail(email) });
       return { ok: false, reason: 'invalid_credentials' };
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      deps.logger.warn('auth.login.failed', { email });
+      deps.logger.warn('auth.login.failed', { emailHash: hashEmail(email) });
       return { ok: false, reason: 'invalid_credentials' };
     }
 

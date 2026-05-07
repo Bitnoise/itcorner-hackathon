@@ -2,7 +2,7 @@ import { createRoute, useNavigate, redirect, isRedirect } from '@tanstack/react-
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { rootRoute } from './__root';
 import { fetchCurrentUser, currentUserQueryOptions } from '../features/auth/queries';
-import { clearToken } from '../lib/auth-token';
+import { clearToken, getToken } from '../lib/auth-token';
 
 export const patientRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -15,8 +15,12 @@ export const patientRoute = createRoute({
       }
     } catch (e) {
       if (isRedirect(e)) throw e;
+      const hadToken = !!getToken();
       clearToken();
-      throw redirect({ to: '/login' });
+      throw redirect({
+        to: '/login',
+        ...(hadToken ? { search: { reason: 'session-expired' } } : {}),
+      });
     }
   },
   component: PatientDashboard,

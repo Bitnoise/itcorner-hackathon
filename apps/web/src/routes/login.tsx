@@ -1,27 +1,45 @@
 import { type FormEvent, useState } from 'react';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
 import { rootRoute } from './__root';
 import { apiClient } from '../lib/api-client';
 import { setToken } from '../lib/auth-token';
 import { currentUserQueryOptions } from '../features/auth/queries';
 
+type ValidationIssue = { path: (string | number)[]; message: string };
+
+class ValidationError extends Error {
+  constructor(public readonly issues: ValidationIssue[]) {
+    super('validation');
+  }
+}
+
+const loginSearchSchema = z.object({
+  reason: z.string().optional(),
+});
+
 export const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
+  validateSearch: (search) => loginSearchSchema.parse(search),
   component: LoginPage,
 });
 
 function LoginPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { reason } = loginRoute.useSearch();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: { email: string; password: string }) => {
       const res = await apiClient.auth.login({ body: credentials });
-      if (res.status === 422) throw new Error('validation');
+      if (res.status === 422) {
+        const body = res.body as { issues?: ValidationIssue[] };
+        throw new ValidationError(body.issues ?? []);
+      }
       if (res.status !== 200) throw new Error('invalid_credentials');
       return res.body;
     },
@@ -37,11 +55,19 @@ function LoginPage() {
     loginMutation.mutate({ email, password });
   }
 
-  const errorMessage = loginMutation.error
-    ? loginMutation.error.message === 'validation'
-      ? 'Please enter a valid email and password.'
-      : 'Invalid credentials. Please check your email and password.'
-    : null;
+  const fieldErrors: Record<string, string> =
+    loginMutation.error instanceof ValidationError
+      ? Object.fromEntries(
+          loginMutation.error.issues
+            .filter((i) => i.path.length > 0)
+            .map((i) => [String(i.path[0]), i.message]),
+        )
+      : {};
+
+  const topError =
+    loginMutation.error && !(loginMutation.error instanceof ValidationError)
+      ? 'Invalid credentials. Please check your email and password.'
+      : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50">
@@ -51,9 +77,15 @@ function LoginPage() {
       >
         <h1 className="text-2xl font-semibold text-slate-900">MedBridge</h1>
 
-        {errorMessage && (
+        {reason === 'session-expired' && !loginMutation.error && (
+          <p role="status" aria-live="polite" className="rounded bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Your session has expired. Please log in again.
+          </p>
+        )}
+
+        {topError && (
           <p role="alert" className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-            {errorMessage}
+            {topError}
           </p>
         )}
 
@@ -70,6 +102,9 @@ function LoginPage() {
             autoComplete="email"
             className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
+          {fieldErrors['email'] && (
+            <p className="text-xs text-red-600">{fieldErrors['email']}</p>
+          )}
         </div>
 
         <div className="space-y-1">
@@ -85,6 +120,9 @@ function LoginPage() {
             autoComplete="current-password"
             className="w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
           />
+          {fieldErrors['password'] && (
+            <p className="text-xs text-red-600">{fieldErrors['password']}</p>
+          )}
         </div>
 
         <button
