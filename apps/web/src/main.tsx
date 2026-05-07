@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { rootRoute } from './routes/__root';
 import { indexRoute } from './routes/index';
+import { loginRoute } from './routes/login';
+import { patientRoute } from './routes/patient';
+import { doctorRoute } from './routes/doctor';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -15,7 +18,7 @@ const queryClient = new QueryClient({
   },
 });
 
-const routeTree = rootRoute.addChildren([indexRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, loginRoute, patientRoute, doctorRoute]);
 
 const router = createRouter({
   routeTree,
