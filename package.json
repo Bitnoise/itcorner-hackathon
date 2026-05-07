@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "docker compose up -d && pnpm -r --parallel --stream dev",
     "build": "pnpm -r --filter=./packages/* build && pnpm -r --filter=./apps/* build",
-    "test": "vitest run",
+    "test": "vitest run && pnpm --filter @medbridge/web test",
     "test:watch": "vitest",
     "test:e2e": "playwright test --config=test/e2e/playwright.config.ts",
     "typecheck": "pnpm -r --parallel typecheck",
