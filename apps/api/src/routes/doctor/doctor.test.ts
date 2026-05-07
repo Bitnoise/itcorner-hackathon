@@ -114,5 +114,114 @@ describeWithDb('Doctor profile routes (integration)', () => {
       expect(body.lastName).toBe('House');
       expect(body.specialization).toBe('Cardiology');
     });
+
+    it('returns the current profile unchanged when the body is empty ({})', async () => {
+      const app = makeApp();
+      const before = await app.request('/doctors/me/profile', {
+        headers: { Authorization: `Bearer ${doctorToken}` },
+      });
+      const beforeBody = (await before.json()) as {
+        firstName: string;
+        lastName: string;
+        specialization: string | null;
+      };
+
+      const res = await app.request('/doctors/me/profile', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${doctorToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        firstName: string;
+        lastName: string;
+        specialization: string | null;
+      };
+      expect(body.firstName).toBe(beforeBody.firstName);
+      expect(body.lastName).toBe(beforeBody.lastName);
+      expect(body.specialization).toBe(beforeBody.specialization);
+    });
+
+    it('does NOT emit doctor.profile.updated for an empty-body PATCH', async () => {
+      const logLines: string[] = [];
+      const capLogger = createLogger({ sink: (line) => logLines.push(line) });
+      const capApp = createApp({ db, config: TEST_CONFIG, logger: capLogger });
+      await capApp.request('/doctors/me/profile', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${doctorToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      const events = logLines.map((l) => JSON.parse(l) as { event: string });
+      expect(events.some((e) => e.event === 'doctor.profile.updated')).toBe(false);
+    });
+
+    it('updates first/last/specialization together and bumps updated_at', async () => {
+      const beforeRow = (
+        await db.select().from(doctors).where(eq(doctors.userId, doctorUserId)).limit(1)
+      )[0];
+      expect(beforeRow).toBeDefined();
+      const beforeUpdatedAt = beforeRow!.updatedAt.getTime();
+
+      // Force a measurable gap so updated_at changes by more than the test runtime jitter.
+      await new Promise((r) => setTimeout(r, 20));
+
+      const app = makeApp();
+      const res = await app.request('/doctors/me/profile', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${doctorToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          firstName: 'Gregory',
+          lastName: 'M. House',
+          specialization: 'Diagnostic Medicine',
+        }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        firstName: string;
+        lastName: string;
+        specialization: string | null;
+      };
+      expect(body.firstName).toBe('Gregory');
+      expect(body.lastName).toBe('M. House');
+      expect(body.specialization).toBe('Diagnostic Medicine');
+
+      const afterRow = (
+        await db.select().from(doctors).where(eq(doctors.userId, doctorUserId)).limit(1)
+      )[0];
+      expect(afterRow!.updatedAt.getTime()).toBeGreaterThan(beforeUpdatedAt);
+    });
+
+    it('emits doctor.profile.updated with the changed field names (no values)', async () => {
+      const logLines: string[] = [];
+      const capLogger = createLogger({ sink: (line) => logLines.push(line) });
+      const capApp = createApp({ db, config: TEST_CONFIG, logger: capLogger });
+      await capApp.request('/doctors/me/profile', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${doctorToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ specialization: 'Neurology' }),
+      });
+      const events = logLines.map((l) =>
+        JSON.parse(l) as { event: string; userId?: string; fields?: string[] },
+      );
+      const updated = events.find((e) => e.event === 'doctor.profile.updated');
+      expect(updated).toBeDefined();
+      expect(updated?.userId).toBe(doctorUserId);
+      expect(updated?.fields).toEqual(['specialization']);
+      // The PII rule: the value must never appear in any log line.
+      const allOutput = logLines.join('');
+      expect(allOutput).not.toContain('Neurology');
+    });
   });
 });
