@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
 const configSchema = z.object({
-  DATABASE_URL: z.string().min(1),
+  // Optional during the kickoff slice — Slice 2 introduces the users table and
+  // adds a hard requirement plus a real connection at boot.
+  DATABASE_URL: z.string().optional(),
   API_PORT: z.coerce.number().int().positive().default(3001),
-  // JWT_SECRET is read but not enforced in this slice. Slice 2 adds the
-  // ≥ 32 chars boot guard.
+  // Read but not enforced in this slice. Slice 2 adds the ≥ 32 chars boot guard.
   JWT_SECRET: z.string().optional(),
 });
 
