@@ -12,28 +12,28 @@ export interface Logger {
   error(event: string, context?: LogContext): void;
 }
 
-const REDACTED_FIELDS = new Set(['password', 'token']);
+const REDACTED_FIELDS = new Set(['password', 'password_hash', 'token', 'authorization', 'jwt']);
 const REDACTED_VALUE = '[REDACTED]';
 
-function redact(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(redact);
-  }
-  if (value !== null && typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [key, child] of Object.entries(value)) {
-      out[key] = REDACTED_FIELDS.has(key) ? REDACTED_VALUE : redact(child);
-    }
-    return out;
-  }
+function redactValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (value !== null && typeof value === 'object') return redactContext(value as LogContext);
   return value;
+}
+
+function redactContext(context: LogContext): LogContext {
+  const out: LogContext = {};
+  for (const [key, child] of Object.entries(context)) {
+    out[key] = REDACTED_FIELDS.has(key) ? REDACTED_VALUE : redactValue(child);
+  }
+  return out;
 }
 
 export function createLogger(options: LoggerOptions = {}): Logger {
   const sink = options.sink ?? ((line: string) => process.stdout.write(`${line}\n`));
 
   function emit(level: LogLevel, event: string, context: LogContext = {}): void {
-    const safeContext = redact(context) as LogContext;
+    const safeContext = redactContext(context);
     sink(JSON.stringify({ level, event, time: new Date().toISOString(), ...safeContext }));
   }
 

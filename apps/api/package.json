@@ -14,12 +14,14 @@
     "@hono/node-server": "^1.13.0",
     "@medbridge/contracts": "workspace:*",
     "@ts-rest/core": "^3.51.0",
+    "bcryptjs": "^2.4.3",
     "drizzle-orm": "^0.36.0",
     "hono": "^4.6.0",
     "postgres": "^3.4.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.0",
     "drizzle-kit": "^0.28.0",
     "tsx": "^4.19.0",

@@ -18,7 +18,7 @@ Canonical vocabulary for MedBridge. Use these exact terms in code, comments, con
 - **JWT_SECRET** — environment variable. Required at startup, must be at least 32 characters; the API process exits with code 1 if missing or too short.
 - **Bearer token** — the JWT presented by the web client in the `Authorization: Bearer <token>` header on every protected request.
 - **Token storage** — the web client persists the JWT in `localStorage`. The single read/write surface is the `auth-token` storage wrapper.
-- **currentUser** — the authenticated principal as the rest of the system sees them: `{ id, email, role }`. Resolved server-side by `GET /auth/me`; consumed client-side via the `['auth', 'me']` TanStack Query key.
+- **currentUser** — the authenticated principal as the rest of the system sees them: `{ id, email, role, firstName, lastName }`. Resolved server-side by `GET /auth/me` (which joins the matching `patients` or `doctors` profile row); consumed client-side via the `['auth', 'me']` TanStack Query key.
 - **Login** — the act of exchanging email + password for a JWT. The HTTP surface is `POST /auth/login`.
 - **Logout** — the act of clearing the JWT from `localStorage` and resetting the auth query cache. Purely client-side; there is no server endpoint.
 
