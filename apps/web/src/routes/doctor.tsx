@@ -5,6 +5,8 @@ import { fetchCurrentUser, currentUserQueryOptions } from '../features/auth/quer
 import { clearToken, getToken } from '../lib/auth-token';
 import { SharedDocumentsList } from '../features/documents/SharedDocumentsList';
 import { AppNav } from '../components/AppNav';
+import { DoctorProfileSummary } from '../features/doctor/DoctorProfileSummary';
+import { useDoctorProfile } from '../features/doctor/use-doctor-profile';
 
 export const doctorRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -32,6 +34,7 @@ function DoctorDashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: user } = useQuery({ ...currentUserQueryOptions, queryFn: fetchCurrentUser });
+  const { data: profile } = useDoctorProfile();
 
   async function handleLogout() {
     clearToken();
@@ -44,9 +47,12 @@ function DoctorDashboard() {
       <AppNav role="doctor" userName={user?.firstName ?? ''} onLogout={handleLogout} />
       <main className="flex-1 overflow-y-auto p-8">
         <div className="mx-auto max-w-2xl space-y-6">
-          <h1 className="text-2xl font-semibold text-slate-900">
-            Welcome, {user?.firstName}
-          </h1>
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">
+              Welcome, {user?.firstName}
+            </h1>
+            <DoctorProfileSummary specialization={profile?.specialization ?? null} />
+          </div>
 
           <section className="rounded-lg border border-slate-200 p-6">
             <h2 className="text-lg font-semibold text-slate-800">Upcoming appointments</h2>
