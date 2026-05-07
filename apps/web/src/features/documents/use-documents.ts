@@ -14,7 +14,7 @@ async function fetchDocuments(): Promise<DocumentItem[]> {
   if (res.status !== 200) {
     throw new Error('Failed to fetch documents');
   }
-  return res.body as DocumentItem[];
+  return res.body;
 }
 
 export const documentsQueryOptions = {

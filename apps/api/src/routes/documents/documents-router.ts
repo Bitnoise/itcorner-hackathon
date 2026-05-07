@@ -37,11 +37,11 @@ export function createDocumentsRouter(
       const body = await c.req.parseBody();
       const file = body['file'];
 
-      if (!file || typeof file === 'string') {
+      if (!(file instanceof File)) {
         return c.json({ error: 'MISSING_FILE' }, 422);
       }
 
-      const result = await uploadDocument(file as File, patientId, { db: deps.db, storage });
+      const result = await uploadDocument(file, patientId, { db: deps.db, storage });
 
       if (!result.ok) {
         if (result.reason === 'missing_file') {

@@ -9,10 +9,12 @@ export const apiClient = initClient(apiContract, {
   baseHeaders: {},
   api: async ({ path, method, headers, body }) => {
     const token = getToken();
+    const isFormData = body instanceof FormData;
+    const { 'Content-Type': _ct, ...headersWithoutContentType } = headers as Record<string, string>;
     const response = await fetch(path, {
       method,
       headers: {
-        ...headers,
+        ...(isFormData ? headersWithoutContentType : headers),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: body ?? undefined,
