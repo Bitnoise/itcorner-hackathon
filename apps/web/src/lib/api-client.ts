@@ -9,7 +9,7 @@ export const apiClient = initClient(apiContract, {
   baseHeaders: {},
   api: async ({ path, method, headers, body }) => {
     const token = getToken();
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(path, {
       method,
       headers: {
         'Content-Type': 'application/json',
