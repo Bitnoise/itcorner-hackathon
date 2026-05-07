@@ -1,0 +1,66 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      pull-requests: write
+      issues: read
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine review mode
+        id: mode
+        run: |
+          if [[ "${{ github.head_ref }}" == bugfix/* ]]; then
+            echo "mode=BUGFIX" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=STANDARD" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Claude Code review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: true
+          use_sticky_comment: true
+          show_full_output: true
+          prompt: |
+            Mode: ${{ steps.mode.outputs.mode }}
+
+            You are a senior engineer reviewing this PR. Read the linked issue (the PR body has "Closes #N") and the project's docs/ARCHITECTURE_RULES.md, docs/GLOSSARY.md, and any docs/ADRs/*.
+
+            If mode == STANDARD, check:
+            1. Spec compliance — does the implementation meet ALL acceptance criteria from the linked issue?
+            2. Architecture — any violations of ARCHITECTURE_RULES.md or ADRs?
+            3. Security — any obvious vulnerabilities (auth, injection, secrets, exposed PII)?
+            4. Test quality — tests external behavior, not implementation? Any fake/tautological tests? Coverage of acceptance criteria?
+            5. Vertical slice — does this slice deliver value end-to-end (schema → API → UI → tests)?
+
+            If mode == BUGFIX, check:
+            1. Minimality — is this a minimal fix? Diffs over 50 lines suggest a rewrite, not a fix.
+            2. Regression — does the new test fail without the fix? (Verify by mentally reverting.)
+            3. Test pinning — is the new test specific enough to catch this exact bug if reintroduced?
+            4. Side effects — does the fix risk affecting unrelated code paths?
+            5. Architecture — same checks as STANDARD but lighter.
+
+            Post a single review comment with the structure:
+            - Verdict: APPROVE | REQUEST_CHANGES
+            - Spec compliance (or Minimality, in bugfix mode): ✅/❌ per item
+            - Architecture findings
+            - Security findings
+            - Test quality
+            - Suggestions (non-blocking)
+
+            Verdict APPROVE means: would merge. REQUEST_CHANGES means: significant issues found, but this is informational — the human will decide. Never block the merge automatically.

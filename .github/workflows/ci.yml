@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: grocery
+          POSTGRES_PASSWORD: grocery
+          POSTGRES_DB: grocery
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U grocery -d grocery"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://grocery:grocery@localhost:5432/grocery
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect apps
+        id: detect
+        run: |
+          if [ -z "$(ls -A apps 2>/dev/null)" ] || [ "$(ls apps 2>/dev/null | grep -v README.md | wc -l)" -eq 0 ]; then
+            echo "has_apps=false" >> "$GITHUB_OUTPUT"
+            echo "No apps yet — skipping verify (boilerplate state)"
+          else
+            echo "has_apps=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: pnpm/action-setup@v3
+        if: steps.detect.outputs.has_apps == 'true'
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.has_apps == 'true'
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install
+        if: steps.detect.outputs.has_apps == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply database schema
+        if: steps.detect.outputs.has_apps == 'true'
+        run: pnpm --filter @app/api exec drizzle-kit push --force
+
+      - name: Typecheck
+        if: steps.detect.outputs.has_apps == 'true'
+        run: pnpm typecheck
+
+      - name: Test
+        if: steps.detect.outputs.has_apps == 'true'
+        run: pnpm test
+
+      - name: Lint
+        if: steps.detect.outputs.has_apps == 'true'
+        run: pnpm lint

@@ -1,0 +1,28 @@
+# Optional Docker sandbox for the agent loop.
+# Use this if you want stronger isolation from the host environment.
+#
+# Build the base image first (or use pre-built):
+#   docker build -t claude-code-sandbox -f agent-loop/Dockerfile .
+#
+# Then run:
+#   docker compose -f agent-loop/docker-compose.yml up agent-loop
+#
+# The container mounts the repo read-write, your Claude auth read-only,
+# and your gh CLI auth read-only.
+
+version: "3.9"
+
+services:
+  agent-loop:
+    image: claude-code-sandbox:latest
+    container_name: agent-loop-main
+    volumes:
+      - ../:/workspace:rw
+      - ${HOME}/.claude:/root/.claude:ro
+      - ${HOME}/.config/gh:/root/.config/gh:ro
+    working_dir: /workspace
+    network_mode: bridge
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - STREAM=main
+    command: ["bash", "agent-loop/afk.sh", "50"]
