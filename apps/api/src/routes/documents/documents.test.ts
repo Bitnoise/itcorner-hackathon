@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtemp, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, readdir, writeFile } from 'node:fs/promises';
 import { and, eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { createApp } from '../../app';
@@ -639,6 +639,252 @@ describeWithDb('Document sharing routes (integration)', () => {
       const res = await app.request(`/documents/${docByPatientA}/shares/${doctorOneId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${doctorOneToken}` },
+      });
+      expect(res.status).toBe(403);
+    });
+  });
+});
+
+describeWithDb('Doctor shared-with-me + download (integration)', () => {
+  const db = createDb(DATABASE_URL!);
+  const logger = createLogger({ sink: () => {} });
+  let tmpDir: string;
+
+  let patientOneId: string;
+  let patientTwoId: string;
+  let doctorAId: string;
+  let doctorBId: string;
+  let doctorAToken: string;
+  let doctorBToken: string;
+  let patientOneToken: string;
+
+  let docA1Id: string; // owned by patientOne, shared with doctorA
+  let docA2Id: string; // owned by patientOne, shared with doctorA
+  let docB1Id: string; // owned by patientTwo, shared with doctorA
+  let docUnsharedId: string; // owned by patientOne, NOT shared with doctorA
+
+  const docA1Bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x31, 0x2e, 0x34]); // "%PDF1.4"
+  let docA1StoragePath: string;
+
+  async function cleanupUsers() {
+    for (const email of [
+      'shared.patient.one@example.com',
+      'shared.patient.two@example.com',
+      'shared.doctor.a@example.com',
+      'shared.doctor.b@example.com',
+    ]) {
+      await db.delete(users).where(eq(users.email, email));
+    }
+  }
+
+  beforeAll(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'doc-shared-with-me-'));
+    await cleanupUsers();
+
+    const hash = await bcrypt.hash('password', 4);
+
+    const [pOne] = await db
+      .insert(users)
+      .values({ email: 'shared.patient.one@example.com', passwordHash: hash, role: 'patient' })
+      .returning();
+    patientOneId = pOne!.id;
+    await db
+      .insert(patients)
+      .values({ userId: patientOneId, firstName: 'Pamela', lastName: 'Owens' });
+    patientOneToken = signJwt({ sub: patientOneId, role: 'patient' }, JWT_SECRET);
+
+    const [pTwo] = await db
+      .insert(users)
+      .values({ email: 'shared.patient.two@example.com', passwordHash: hash, role: 'patient' })
+      .returning();
+    patientTwoId = pTwo!.id;
+    await db
+      .insert(patients)
+      .values({ userId: patientTwoId, firstName: 'Tomas', lastName: 'Worth' });
+
+    const [dA] = await db
+      .insert(users)
+      .values({ email: 'shared.doctor.a@example.com', passwordHash: hash, role: 'doctor' })
+      .returning();
+    doctorAId = dA!.id;
+    await db.insert(doctors).values({ userId: doctorAId, firstName: 'Anna', lastName: 'Reade' });
+    doctorAToken = signJwt({ sub: doctorAId, role: 'doctor' }, JWT_SECRET);
+
+    const [dB] = await db
+      .insert(users)
+      .values({ email: 'shared.doctor.b@example.com', passwordHash: hash, role: 'doctor' })
+      .returning();
+    doctorBId = dB!.id;
+    await db.insert(doctors).values({ userId: doctorBId, firstName: 'Ben', lastName: 'Lonely' });
+    doctorBToken = signJwt({ sub: doctorBId, role: 'doctor' }, JWT_SECRET);
+
+    // docA1: real bytes on disk so we can verify streaming
+    docA1StoragePath = `${patientOneId}-a1`;
+    await writeFile(join(tmpDir, docA1StoragePath), docA1Bytes);
+    const [a1] = await db
+      .insert(documents)
+      .values({
+        patientId: patientOneId,
+        filename: 'a1-report.pdf',
+        mimeType: 'application/pdf',
+        size: docA1Bytes.byteLength,
+        storagePath: docA1StoragePath,
+      })
+      .returning();
+    docA1Id = a1!.id;
+
+    const [a2] = await db
+      .insert(documents)
+      .values({
+        patientId: patientOneId,
+        filename: 'a2-scan.png',
+        mimeType: 'image/png',
+        size: 50,
+        storagePath: `${patientOneId}-a2`,
+      })
+      .returning();
+    docA2Id = a2!.id;
+
+    const [b1] = await db
+      .insert(documents)
+      .values({
+        patientId: patientTwoId,
+        filename: 'b1-xray.jpg',
+        mimeType: 'image/jpeg',
+        size: 80,
+        storagePath: `${patientTwoId}-b1`,
+      })
+      .returning();
+    docB1Id = b1!.id;
+
+    const [unshared] = await db
+      .insert(documents)
+      .values({
+        patientId: patientOneId,
+        filename: 'private.pdf',
+        mimeType: 'application/pdf',
+        size: 30,
+        storagePath: `${patientOneId}-private`,
+      })
+      .returning();
+    docUnsharedId = unshared!.id;
+
+    // Shares: doctorA gets a1 + a2 + b1; doctorB gets nothing
+    await db
+      .insert(documentShares)
+      .values([
+        { documentId: docA1Id, doctorId: doctorAId },
+        { documentId: docA2Id, doctorId: doctorAId },
+        { documentId: docB1Id, doctorId: doctorAId },
+      ]);
+  });
+
+  afterAll(async () => {
+    await cleanupUsers();
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeApp() {
+    return createApp({
+      db,
+      config: { JWT_SECRET, DOCUMENT_STORAGE_PATH: tmpDir },
+      logger,
+    });
+  }
+
+  describe('GET /documents/shared-with-me', () => {
+    it('returns documents grouped by owning patient when shares exist', async () => {
+      const app = makeApp();
+      const res = await app.request('/documents/shared-with-me', {
+        headers: { Authorization: `Bearer ${doctorAToken}` },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Array<{
+        patientId: string;
+        patientDisplayName: string;
+        documents: Array<{ id: string; filename: string; mimeType: string; size: number; uploadedAt: string }>;
+      }>;
+
+      const pOne = body.find((g) => g.patientId === patientOneId);
+      const pTwo = body.find((g) => g.patientId === patientTwoId);
+      expect(pOne).toBeDefined();
+      expect(pOne?.patientDisplayName).toBe('Pamela Owens');
+      expect(pOne?.documents.map((d) => d.id).sort()).toEqual([docA1Id, docA2Id].sort());
+      expect(pTwo).toBeDefined();
+      expect(pTwo?.patientDisplayName).toBe('Tomas Worth');
+      expect(pTwo?.documents.map((d) => d.id)).toEqual([docB1Id]);
+    });
+
+    it('returns [] when no documents are shared with the doctor', async () => {
+      const app = makeApp();
+      const res = await app.request('/documents/shared-with-me', {
+        headers: { Authorization: `Bearer ${doctorBToken}` },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as unknown[];
+      expect(body).toEqual([]);
+    });
+
+    it('returns 401 without a JWT', async () => {
+      const app = makeApp();
+      const res = await app.request('/documents/shared-with-me');
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 with a patient JWT', async () => {
+      const app = makeApp();
+      const res = await app.request('/documents/shared-with-me', {
+        headers: { Authorization: `Bearer ${patientOneToken}` },
+      });
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe('GET /documents/:id/file', () => {
+    it('streams the file with correct Content-Type and Content-Disposition headers when shared', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docA1Id}/file`, {
+        headers: { Authorization: `Bearer ${doctorAToken}` },
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('application/pdf');
+      const cd = res.headers.get('content-disposition');
+      expect(cd).toBe('attachment; filename="a1-report.pdf"');
+      const buf = new Uint8Array(await res.arrayBuffer());
+      expect(buf).toEqual(docA1Bytes);
+    });
+
+    it('returns 403 ACCESS_DENIED when no share exists for (documentId, doctorId)', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docUnsharedId}/file`, {
+        headers: { Authorization: `Bearer ${doctorAToken}` },
+      });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('ACCESS_DENIED');
+    });
+
+    it('returns 404 DOCUMENT_NOT_FOUND for an unknown document id', async () => {
+      const unknownId = '00000000-0000-4000-8000-000000000099';
+      const app = makeApp();
+      const res = await app.request(`/documents/${unknownId}/file`, {
+        headers: { Authorization: `Bearer ${doctorAToken}` },
+      });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('DOCUMENT_NOT_FOUND');
+    });
+
+    it('returns 401 without a JWT', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docA1Id}/file`);
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 with a patient JWT', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docA1Id}/file`, {
+        headers: { Authorization: `Bearer ${patientOneToken}` },
       });
       expect(res.status).toBe(403);
     });
