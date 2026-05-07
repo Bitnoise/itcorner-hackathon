@@ -1,5 +1,18 @@
+import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { signJwt, verifyJwt } from './jwt';
+
+function b64url(s: string): string {
+  return Buffer.from(s).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function craftToken(claims: Record<string, unknown>, secret: string): string {
+  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payload = b64url(JSON.stringify(claims));
+  const sig = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  return `${header}.${payload}.${sig}`;
+}
 
 const SECRET = 'test-secret-that-is-at-least-32-chars-long';
 
@@ -56,5 +69,24 @@ describe('signJwt / verifyJwt', () => {
   it('produces a three-part dot-separated string', () => {
     const token = signJwt({ sub: 'user-123', role: 'doctor' }, SECRET);
     expect(token.split('.')).toHaveLength(3);
+  });
+
+  it('returns invalid for a token with missing exp claim', () => {
+    const token = craftToken({ sub: 'user-123', role: 'patient', iat: Math.floor(Date.now() / 1000) }, SECRET);
+    const result = verifyJwt(token, SECRET);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('invalid');
+  });
+
+  it('returns invalid for a token with a junk role claim', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = craftToken({ sub: 'user-123', role: 'admin', iat: now, exp: now + 3600 }, SECRET);
+    const result = verifyJwt(token, SECRET);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('invalid');
   });
 });
