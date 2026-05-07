@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { rootRoute } from './__root';
 import { fetchCurrentUser, currentUserQueryOptions } from '../features/auth/queries';
 import { clearToken, getToken } from '../lib/auth-token';
+import { SharedDocumentsList } from '../features/documents/SharedDocumentsList';
 
 export const doctorRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -57,6 +58,13 @@ function DoctorDashboard() {
       <section className="rounded-lg border border-slate-200 p-6">
         <h2 className="text-lg font-semibold text-slate-800">Upcoming appointments</h2>
         <p className="mt-2 text-sm text-slate-500">No appointments scheduled yet.</p>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 p-6">
+        <h2 className="text-lg font-semibold text-slate-800">Documents shared with me</h2>
+        <div className="mt-3">
+          <SharedDocumentsList />
+        </div>
       </section>
     </div>
   );

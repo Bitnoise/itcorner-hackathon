@@ -25,6 +25,12 @@ export const sharingMutationSuccessSchema = z.object({
   ok: z.literal(true),
 });
 
+export const sharedDocumentsGroupSchema = z.object({
+  patientId: z.string().uuid(),
+  patientDisplayName: z.string(),
+  documents: z.array(documentMetadataSchema),
+});
+
 export const documentsContract = c.router({
   upload: {
     method: 'POST',
@@ -73,6 +79,23 @@ export const documentsContract = c.router({
     pathParams: z.object({ id: z.string().uuid(), doctorId: z.string().uuid() }),
     responses: {
       200: sharingMutationSuccessSchema,
+      403: documentErrorSchema,
+      404: documentErrorSchema,
+    },
+  },
+  sharedWithMe: {
+    method: 'GET',
+    path: '/documents/shared-with-me',
+    responses: {
+      200: z.array(sharedDocumentsGroupSchema),
+    },
+  },
+  download: {
+    method: 'GET',
+    path: '/documents/:id/file',
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: c.type<Blob>(),
       403: documentErrorSchema,
       404: documentErrorSchema,
     },

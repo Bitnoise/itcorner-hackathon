@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { Readable } from 'node:stream';
 import type { Db } from '../../infrastructure/db';
 import type { AppConfig } from '../../config';
 import type { Logger } from '../../lib/logger';
@@ -11,6 +12,8 @@ import { listDocuments } from '../../use-cases/documents/list-documents';
 import { getSharingState } from '../../use-cases/documents/get-sharing-state';
 import { grantAccess } from '../../use-cases/documents/grant-access';
 import { revokeAccess } from '../../use-cases/documents/revoke-access';
+import { getSharedWithMe } from '../../use-cases/documents/get-shared-with-me';
+import { downloadDocument } from '../../use-cases/documents/download-document';
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024 + 1; // 10 MiB + 1 byte
 
@@ -83,6 +86,69 @@ export function createDocumentsRouter(
       200,
     );
   });
+
+  // Doctor-side endpoints. The literal-path /documents/shared-with-me MUST be
+  // registered before the param route /documents/:id/file so it isn't shadowed.
+  router.get(
+    '/documents/shared-with-me',
+    requireAuth(deps),
+    requireRole(['doctor'], deps),
+    async (c) => {
+      const doctorId = c.get('userId');
+      const groups = await getSharedWithMe(doctorId, { db: deps.db });
+      return c.json(
+        groups.map((g) => ({
+          patientId: g.patientId,
+          patientDisplayName: g.patientDisplayName,
+          documents: g.documents.map((d) => ({
+            id: d.id,
+            filename: d.filename,
+            mimeType: d.mimeType,
+            size: d.size,
+            uploadedAt: d.uploadedAt.toISOString(),
+          })),
+        })),
+        200,
+      );
+    },
+  );
+
+  router.get(
+    '/documents/:id/file',
+    requireAuth(deps),
+    requireRole(['doctor'], deps),
+    async (c) => {
+      const documentId = c.req.param('id');
+      const doctorId = c.get('userId');
+      const result = await downloadDocument(documentId, doctorId, {
+        db: deps.db,
+        storage,
+      });
+      if (!result.ok) {
+        if (result.reason === 'not_found') {
+          return c.json({ error: 'DOCUMENT_NOT_FOUND' }, 404);
+        }
+        return c.json({ error: 'ACCESS_DENIED' }, 403);
+      }
+      // storage.read returns NodeJS.ReadableStream; Readable.toWeb needs a concrete
+      // Readable instance, and its return type ReadableStream<any> doesn't structurally
+      // match the global ReadableStream that Response expects, so a second cast is
+      // unavoidable until @types/node aligns.
+      const webStream = Readable.toWeb(
+        result.stream as Readable,
+      ) as unknown as ReadableStream;
+      // Escape any quotes or backslashes in the original filename so a malicious or
+      // unusual name cannot break out of the Content-Disposition quoted-string.
+      const safeFilename = result.filename.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      return new Response(webStream, {
+        status: 200,
+        headers: {
+          'Content-Type': result.mimeType,
+          'Content-Disposition': `attachment; filename="${safeFilename}"`,
+        },
+      });
+    },
+  );
 
   // Sub-paths: parent .use('/documents', ...) does not match /documents/:id/shares,
   // so each sub-path opts in to auth + patient role inline.
