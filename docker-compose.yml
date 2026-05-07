@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: medbridge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: medbridge
+      POSTGRES_PASSWORD: medbridge
+      POSTGRES_DB: medbridge
+    ports:
+      - '5433:5432'
+    volumes:
+      - medbridge-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U medbridge -d medbridge']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  medbridge-pgdata:
+    name: medbridge-pgdata

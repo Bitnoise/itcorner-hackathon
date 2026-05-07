@@ -1,0 +1,26 @@
+{
+  "name": "@medbridge/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./health": "./src/health.ts",
+    "./auth": "./src/auth.ts",
+    "./patient-profile": "./src/patient-profile.ts",
+    "./documents": "./src/documents.ts",
+    "./doctor": "./src/doctor.ts",
+    "./appointments": "./src/appointments.ts",
+    "./visits": "./src/visits.ts",
+    "./contract": "./src/contract.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ts-rest/core": "^3.51.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

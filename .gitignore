@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+*.tsbuildinfo
+
+# Env files (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Test artifacts
+coverage/
+test-results/
+playwright-report/
+playwright/.cache/
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Agent loop runtime artifacts
+agent-loop/logs/
+agent-loop/state
+agent-loop/*.pid
+
+# Relay run artifacts
+.relay/
+
+# Local Claude settings
+.claude/settings.local.json
