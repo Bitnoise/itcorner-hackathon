@@ -9,16 +9,15 @@ export const apiClient = initClient(apiContract, {
   baseHeaders: {},
   api: async ({ path, method, headers, body }) => {
     const token = getToken();
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(path, {
       method,
       headers: {
-        'Content-Type': 'application/json',
         ...headers,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: body !== null && body !== undefined ? JSON.stringify(body) : undefined,
+      body: body ?? undefined,
     });
-    const data = await response.json().catch(() => null) as unknown;
+    const data = (await response.json().catch(() => null)) as unknown;
     return { status: response.status, body: data, headers: response.headers };
   },
 });
