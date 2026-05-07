@@ -47,6 +47,19 @@ Canonical vocabulary for MedBridge. Use these exact terms in code, comments, con
 - **Health endpoint** — public `GET /health`. Returns `{ status: 'ok' }` with HTTP 200. No auth.
 - **Contracts package** — `packages/contracts`. ts-rest + Zod definitions of every API contract. The single source of truth for request/response/error types; both `apps/api` and `apps/web` import from here.
 
+## Documents
+
+- **Document** — a medical file (PDF, PNG, JPEG, or WebP) uploaded by a patient. Metadata (original filename, MIME type, byte size, upload timestamp) is persisted in the `documents` table; the file itself is stored on disk under a UUID-only filename with no extension.
+- **Document share** — a record in `document_shares` granting a specific doctor read access to a specific document. Created by the owning patient (grant); destroyed by the owning patient (revoke).
+- **Sharing state** — for a given document, the full list of doctors in the system each annotated with a `hasAccess` boolean indicating whether a document share exists for that pair.
+- **Shared with me** — the doctor-facing view: all documents currently shared with the authenticated doctor, grouped by the owning patient.
+- **Storage path** — the absolute filesystem directory where document files are written. Configurable via `DOCUMENT_STORAGE_PATH`; auto-created at API startup; overridden in tests to a temp directory.
+- **DOCUMENT_STORAGE_PATH** — environment variable. Absolute path for document file storage. Defaults to `apps/api/storage/documents/`. Overridden in integration tests to a per-suite `os.tmpdir()` subdirectory.
+- **`documents`** — the document metadata table. UUID PK, FK to `users.id` (patient), original filename, MIME type, byte size, UUID-only storage path on disk, upload timestamp.
+- **`document_shares`** — the access-control join table. Composite PK of (`document_id`, `doctor_id`). FK to `documents.id` ON DELETE CASCADE and to `users.id` (doctor) ON DELETE CASCADE.
+- **`SharedDocumentsList`** — the named React component exported by Module 02 and re-used by Module 04. Self-contained (no required props); fetches its own data via `useSharedDocuments`.
+- **`useSharedDocuments`** — the TanStack Query hook bundled with `SharedDocumentsList`. Calls `GET /documents/shared-with-me` and returns documents grouped by patient.
+
 ## Workflow
 
 - **Slice** — a tracer-bullet vertical: DB schema → API → contract → UI → tests, all delivered together. The agent loop never works horizontally.
