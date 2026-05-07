@@ -19,6 +19,9 @@ export function createMeRoute(deps: {
     const result = await getUserProfile(userId, deps.db, deps.logger);
 
     if (!result.ok) {
+      if (result.reason === 'db_error') {
+        return c.json({ error: 'Service unavailable' }, 503);
+      }
       return c.json({ error: 'Account not found' }, 401);
     }
 

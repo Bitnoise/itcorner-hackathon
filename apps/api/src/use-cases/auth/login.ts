@@ -1,9 +1,8 @@
 import bcrypt from 'bcryptjs';
-import { sql, eq } from 'drizzle-orm';
 import type { Db } from '../../infrastructure/db';
+import { findUserByEmail } from '../../infrastructure/user-repository';
 import { signJwt } from '../../lib/jwt';
 import type { Logger } from '../../lib/logger';
-import { users } from '../../db/schema';
 import type { AppConfig } from '../../config';
 
 export type LoginResult =
@@ -16,11 +15,7 @@ export async function login(
   deps: { db: Db; config: Pick<AppConfig, 'JWT_SECRET'>; logger: Logger },
 ): Promise<LoginResult> {
   try {
-    const [user] = await deps.db
-      .select()
-      .from(users)
-      .where(eq(sql`lower(${users.email})`, email.toLowerCase()))
-      .limit(1);
+    const user = await findUserByEmail(deps.db, email);
 
     if (!user) {
       deps.logger.warn('auth.login.failed', { email });
