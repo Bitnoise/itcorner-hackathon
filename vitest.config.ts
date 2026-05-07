@@ -18,6 +18,7 @@ export default defineConfig({
   test: {
     include: [
       'apps/api/src/**/*.test.ts',
+      'apps/api/scripts/**/*.test.ts',
       'packages/contracts/src/**/*.test.ts',
     ],
     environment: 'node',
