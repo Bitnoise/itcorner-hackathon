@@ -1,69 +1,69 @@
 [
   {
-    "login": "dr.kowalski",
+    "email": "dr.kowalski@clinic.pl",
     "password": "Pass1234!",
     "firstName": "Marek",
     "lastName": "Kowalski",
     "accountType": "doctor"
   },
   {
-    "login": "dr.nowak",
+    "email": "dr.nowak@clinic.pl",
     "password": "Pass1234!",
     "firstName": "Anna",
     "lastName": "Nowak",
     "accountType": "doctor"
   },
   {
-    "login": "dr.wisniewski",
+    "email": "dr.wisniewski@clinic.pl",
     "password": "Pass1234!",
     "firstName": "Piotr",
     "lastName": "Wiśniewski",
     "accountType": "doctor"
   },
   {
-    "login": "dr.wojcik",
+    "email": "dr.wojcik@clinic.pl",
     "password": "Pass1234!",
     "firstName": "Katarzyna",
     "lastName": "Wójcik",
     "accountType": "doctor"
   },
   {
-    "login": "dr.lewandowski",
+    "email": "dr.lewandowski@clinic.pl",
     "password": "Pass1234!",
     "firstName": "Tomasz",
     "lastName": "Lewandowski",
     "accountType": "doctor"
   },
   {
-    "login": "p.zielinski",
+    "email": "p.zielinski@mail.pl",
     "password": "Pass1234!",
     "firstName": "Jan",
     "lastName": "Zieliński",
     "accountType": "patient"
   },
   {
-    "login": "p.kaminska",
+    "email": "p.kaminska@mail.pl",
     "password": "Pass1234!",
     "firstName": "Monika",
     "lastName": "Kamińska",
     "accountType": "patient"
   },
   {
-    "login": "p.szymanski",
+    "email": "p.szymanski@mail.pl",
     "password": "Pass1234!",
     "firstName": "Krzysztof",
     "lastName": "Szymański",
     "accountType": "patient"
   },
   {
-    "login": "p.wozniak",
+    "email": "p.wozniak@mail.pl",
     "password": "Pass1234!",
     "firstName": "Agnieszka",
     "lastName": "Woźniak",
     "accountType": "patient"
   },
   {
-    "login": "p.dabrowski",
+    "email": "p.dabrowski@mail.pl",
     "password": "Pass1234!",
     "firstName": "Michał",
     "lastName": "Dąbrowski",
