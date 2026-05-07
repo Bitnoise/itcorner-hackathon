@@ -4,6 +4,7 @@ import { rootRoute } from './__root';
 import { fetchCurrentUser, currentUserQueryOptions } from '../features/auth/queries';
 import { clearToken, getToken } from '../lib/auth-token';
 import { SharedDocumentsList } from '../features/documents/SharedDocumentsList';
+import { AppNav } from '../components/AppNav';
 
 export const doctorRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -39,33 +40,27 @@ function DoctorDashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-8">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="flex h-screen">
+      <AppNav role="doctor" userName={user?.firstName ?? ''} onLogout={handleLogout} />
+      <main className="flex-1 overflow-y-auto p-8">
+        <div className="mx-auto max-w-2xl space-y-6">
           <h1 className="text-2xl font-semibold text-slate-900">
             Welcome, {user?.firstName}
           </h1>
-          <p className="text-sm text-slate-500">Doctor</p>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
-        >
-          Log out
-        </button>
-      </div>
 
-      <section className="rounded-lg border border-slate-200 p-6">
-        <h2 className="text-lg font-semibold text-slate-800">Upcoming appointments</h2>
-        <p className="mt-2 text-sm text-slate-500">No appointments scheduled yet.</p>
-      </section>
+          <section className="rounded-lg border border-slate-200 p-6">
+            <h2 className="text-lg font-semibold text-slate-800">Upcoming appointments</h2>
+            <p className="mt-2 text-sm text-slate-500">No appointments scheduled yet.</p>
+          </section>
 
-      <section className="rounded-lg border border-slate-200 p-6">
-        <h2 className="text-lg font-semibold text-slate-800">Documents shared with me</h2>
-        <div className="mt-3">
-          <SharedDocumentsList />
+          <section className="rounded-lg border border-slate-200 p-6">
+            <h2 className="text-lg font-semibold text-slate-800">Documents shared with me</h2>
+            <div className="mt-3">
+              <SharedDocumentsList />
+            </div>
+          </section>
         </div>
-      </section>
+      </main>
     </div>
   );
 }

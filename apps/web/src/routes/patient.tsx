@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { rootRoute } from './__root';
 import { fetchCurrentUser, currentUserQueryOptions } from '../features/auth/queries';
 import { clearToken, getToken } from '../lib/auth-token';
+import { AppNav } from '../components/AppNav';
 
 export const patientRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -38,26 +39,20 @@ function PatientDashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 p-8">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="flex h-screen">
+      <AppNav role="patient" userName={user?.firstName ?? ''} onLogout={handleLogout} />
+      <main className="flex-1 overflow-y-auto p-8">
+        <div className="mx-auto max-w-2xl space-y-6">
           <h1 className="text-2xl font-semibold text-slate-900">
             Welcome, {user?.firstName}
           </h1>
-          <p className="text-sm text-slate-500">Patient</p>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="rounded border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
-        >
-          Log out
-        </button>
-      </div>
 
-      <section className="rounded-lg border border-slate-200 p-6">
-        <h2 className="text-lg font-semibold text-slate-800">Upcoming appointments</h2>
-        <p className="mt-2 text-sm text-slate-500">No appointments scheduled yet.</p>
-      </section>
+          <section className="rounded-lg border border-slate-200 p-6">
+            <h2 className="text-lg font-semibold text-slate-800">Upcoming appointments</h2>
+            <p className="mt-2 text-sm text-slate-500">No appointments scheduled yet.</p>
+          </section>
+        </div>
+      </main>
     </div>
   );
 }
