@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: medbridge
       POSTGRES_DB: medbridge
     ports:
-      - '5432:5432'
+      - '5433:5432'
     volumes:
       - medbridge-pgdata:/var/lib/postgresql/data
     healthcheck:
