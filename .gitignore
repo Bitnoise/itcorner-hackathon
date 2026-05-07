@@ -38,3 +38,6 @@ agent-loop/*.pid
 
 # Local Claude settings
 .claude/settings.local.json
+
+# Document storage uploads
+apps/api/storage/

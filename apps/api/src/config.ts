@@ -4,6 +4,7 @@ const configSchema = z.object({
   DATABASE_URL: z.string().min(1),
   API_PORT: z.coerce.number().int().positive().default(3001),
   JWT_SECRET: z.string().min(32),
+  DOCUMENT_STORAGE_PATH: z.string().default('apps/api/storage/documents/'),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;

@@ -6,6 +6,7 @@ import { rootRoute } from './routes/__root';
 import { indexRoute } from './routes/index';
 import { loginRoute } from './routes/login';
 import { patientRoute } from './routes/patient';
+import { patientDocumentsRoute } from './routes/patient/documents';
 import { doctorRoute } from './routes/doctor';
 import './index.css';
 
@@ -18,7 +19,13 @@ const queryClient = new QueryClient({
   },
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, loginRoute, patientRoute, doctorRoute]);
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  loginRoute,
+  patientRoute,
+  patientDocumentsRoute,
+  doctorRoute,
+]);
 
 const router = createRouter({
   routeTree,
