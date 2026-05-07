@@ -1,0 +1,72 @@
+[
+  {
+    "login": "dr.kowalski",
+    "password": "Pass1234!",
+    "firstName": "Marek",
+    "lastName": "Kowalski",
+    "accountType": "doctor"
+  },
+  {
+    "login": "dr.nowak",
+    "password": "Pass1234!",
+    "firstName": "Anna",
+    "lastName": "Nowak",
+    "accountType": "doctor"
+  },
+  {
+    "login": "dr.wisniewski",
+    "password": "Pass1234!",
+    "firstName": "Piotr",
+    "lastName": "Wiśniewski",
+    "accountType": "doctor"
+  },
+  {
+    "login": "dr.wojcik",
+    "password": "Pass1234!",
+    "firstName": "Katarzyna",
+    "lastName": "Wójcik",
+    "accountType": "doctor"
+  },
+  {
+    "login": "dr.lewandowski",
+    "password": "Pass1234!",
+    "firstName": "Tomasz",
+    "lastName": "Lewandowski",
+    "accountType": "doctor"
+  },
+  {
+    "login": "p.zielinski",
+    "password": "Pass1234!",
+    "firstName": "Jan",
+    "lastName": "Zieliński",
+    "accountType": "patient"
+  },
+  {
+    "login": "p.kaminska",
+    "password": "Pass1234!",
+    "firstName": "Monika",
+    "lastName": "Kamińska",
+    "accountType": "patient"
+  },
+  {
+    "login": "p.szymanski",
+    "password": "Pass1234!",
+    "firstName": "Krzysztof",
+    "lastName": "Szymański",
+    "accountType": "patient"
+  },
+  {
+    "login": "p.wozniak",
+    "password": "Pass1234!",
+    "firstName": "Agnieszka",
+    "lastName": "Woźniak",
+    "accountType": "patient"
+  },
+  {
+    "login": "p.dabrowski",
+    "password": "Pass1234!",
+    "firstName": "Michał",
+    "lastName": "Dąbrowski",
+    "accountType": "patient"
+  }
+]
