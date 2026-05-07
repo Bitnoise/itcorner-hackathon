@@ -8,6 +8,9 @@ import { requireAuth, requireRole } from '../../middleware/require-auth';
 import { createDocumentStorage } from '../../infrastructure/document-storage';
 import { uploadDocument } from '../../use-cases/documents/upload-document';
 import { listDocuments } from '../../use-cases/documents/list-documents';
+import { getSharingState } from '../../use-cases/documents/get-sharing-state';
+import { grantAccess } from '../../use-cases/documents/grant-access';
+import { revokeAccess } from '../../use-cases/documents/revoke-access';
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024 + 1; // 10 MiB + 1 byte
 
@@ -80,6 +83,70 @@ export function createDocumentsRouter(
       200,
     );
   });
+
+  // Sub-paths: parent .use('/documents', ...) does not match /documents/:id/shares,
+  // so each sub-path opts in to auth + patient role inline.
+  router.get(
+    '/documents/:id/shares',
+    requireAuth(deps),
+    requireRole(['patient'], deps),
+    async (c) => {
+      const documentId = c.req.param('id');
+      const patientId = c.get('userId');
+      const result = await getSharingState(documentId, patientId, { db: deps.db });
+      if (!result.ok) {
+        if (result.reason === 'not_found') {
+          return c.json({ error: 'DOCUMENT_NOT_FOUND' }, 404);
+        }
+        return c.json({ error: 'FORBIDDEN' }, 403);
+      }
+      return c.json(result.doctors, 200);
+    },
+  );
+
+  router.put(
+    '/documents/:id/shares/:doctorId',
+    requireAuth(deps),
+    requireRole(['patient'], deps),
+    async (c) => {
+      const documentId = c.req.param('id');
+      const doctorId = c.req.param('doctorId');
+      const patientId = c.get('userId');
+      const result = await grantAccess(documentId, doctorId, patientId, { db: deps.db });
+      if (!result.ok) {
+        if (result.reason === 'document_not_found') {
+          return c.json({ error: 'DOCUMENT_NOT_FOUND' }, 404);
+        }
+        if (result.reason === 'doctor_not_found') {
+          return c.json({ error: 'DOCTOR_NOT_FOUND' }, 404);
+        }
+        return c.json({ error: 'FORBIDDEN' }, 403);
+      }
+      return c.json({ ok: true }, 200);
+    },
+  );
+
+  router.delete(
+    '/documents/:id/shares/:doctorId',
+    requireAuth(deps),
+    requireRole(['patient'], deps),
+    async (c) => {
+      const documentId = c.req.param('id');
+      const doctorId = c.req.param('doctorId');
+      const patientId = c.get('userId');
+      const result = await revokeAccess(documentId, doctorId, patientId, { db: deps.db });
+      if (!result.ok) {
+        if (result.reason === 'document_not_found') {
+          return c.json({ error: 'DOCUMENT_NOT_FOUND' }, 404);
+        }
+        if (result.reason === 'doctor_not_found') {
+          return c.json({ error: 'DOCTOR_NOT_FOUND' }, 404);
+        }
+        return c.json({ error: 'FORBIDDEN' }, 403);
+      }
+      return c.json({ ok: true }, 200);
+    },
+  );
 
   return router;
 }

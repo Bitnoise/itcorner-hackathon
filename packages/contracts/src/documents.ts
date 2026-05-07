@@ -15,6 +15,16 @@ export const documentErrorSchema = z.object({
   error: z.string(),
 });
 
+export const doctorAccessSchema = z.object({
+  doctorId: z.string().uuid(),
+  displayName: z.string(),
+  hasAccess: z.boolean(),
+});
+
+export const sharingMutationSuccessSchema = z.object({
+  ok: z.literal(true),
+});
+
 export const documentsContract = c.router({
   upload: {
     method: 'POST',
@@ -34,6 +44,37 @@ export const documentsContract = c.router({
     path: '/documents',
     responses: {
       200: z.array(documentMetadataSchema),
+    },
+  },
+  getSharingState: {
+    method: 'GET',
+    path: '/documents/:id/shares',
+    pathParams: z.object({ id: z.string().uuid() }),
+    responses: {
+      200: z.array(doctorAccessSchema),
+      403: documentErrorSchema,
+      404: documentErrorSchema,
+    },
+  },
+  grantAccess: {
+    method: 'PUT',
+    path: '/documents/:id/shares/:doctorId',
+    pathParams: z.object({ id: z.string().uuid(), doctorId: z.string().uuid() }),
+    body: c.type<undefined>(),
+    responses: {
+      200: sharingMutationSuccessSchema,
+      403: documentErrorSchema,
+      404: documentErrorSchema,
+    },
+  },
+  revokeAccess: {
+    method: 'DELETE',
+    path: '/documents/:id/shares/:doctorId',
+    pathParams: z.object({ id: z.string().uuid(), doctorId: z.string().uuid() }),
+    responses: {
+      200: sharingMutationSuccessSchema,
+      403: documentErrorSchema,
+      404: documentErrorSchema,
     },
   },
 });
