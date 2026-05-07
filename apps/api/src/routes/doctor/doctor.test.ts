@@ -21,7 +21,7 @@ describeWithDb('Doctor profile routes (integration)', () => {
   let doctorUserId: string;
   let doctorToken: string;
   let patientUserId: string;
-  let patientToken: string;
+  let _patientToken: string;
 
   beforeAll(async () => {
     await db.delete(users).where(eq(users.email, 'doc.profile.doctor@example.com'));
@@ -54,7 +54,7 @@ describeWithDb('Doctor profile routes (integration)', () => {
       })
       .returning();
     patientUserId = patUser!.id;
-    patientToken = signJwt({ sub: patientUserId, role: 'patient' }, JWT_SECRET);
+    _patientToken = signJwt({ sub: patientUserId, role: 'patient' }, JWT_SECRET);
     await db.insert(patients).values({
       userId: patientUserId,
       firstName: 'Lisa',

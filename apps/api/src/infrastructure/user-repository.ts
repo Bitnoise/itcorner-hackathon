@@ -35,3 +35,25 @@ export async function findDoctorProfile(
   const [row] = await db.select().from(doctors).where(eq(doctors.userId, userId)).limit(1);
   return row;
 }
+
+export type DoctorProfileUpdate = Partial<{
+  firstName: string;
+  lastName: string;
+  specialization: string | null;
+}>;
+
+export async function updateDoctorProfile(
+  db: Db,
+  userId: string,
+  fields: DoctorProfileUpdate,
+): Promise<DoctorRow | undefined> {
+  if (Object.keys(fields).length === 0) {
+    return findDoctorProfile(db, userId);
+  }
+  const [row] = await db
+    .update(doctors)
+    .set({ ...fields, updatedAt: new Date() })
+    .where(eq(doctors.userId, userId))
+    .returning();
+  return row;
+}

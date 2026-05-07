@@ -32,6 +32,7 @@ export const doctors = pgTable('doctors', {
     .references(() => users.id, { onDelete: 'cascade' }),
   firstName: text('first_name').notNull(),
   lastName: text('last_name').notNull(),
+  specialization: text('specialization'),
   updatedAt: timestamp('updated_at')
     .notNull()
     .defaultNow()
