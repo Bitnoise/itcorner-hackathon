@@ -90,4 +90,29 @@ describeWithDb('Doctor profile routes (integration)', () => {
       expect(body.specialization === null || typeof body.specialization === 'string').toBe(true);
     });
   });
+
+  describe('PATCH /doctors/me/profile', () => {
+    it('updates only specialization when only specialization is provided', async () => {
+      const app = makeApp();
+      const res = await app.request('/doctors/me/profile', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${doctorToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ specialization: 'Cardiology' }),
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        userId: string;
+        firstName: string;
+        lastName: string;
+        specialization: string | null;
+      };
+      expect(body.userId).toBe(doctorUserId);
+      expect(body.firstName).toBe('Greg');
+      expect(body.lastName).toBe('House');
+      expect(body.specialization).toBe('Cardiology');
+    });
+  });
 });
