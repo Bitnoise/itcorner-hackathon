@@ -8,6 +8,7 @@ import { requireAuth, requireRole } from '../../middleware/require-auth';
 import { createDocumentStorage } from '../../infrastructure/document-storage';
 import { uploadDocument } from '../../use-cases/documents/upload-document';
 import { listDocuments } from '../../use-cases/documents/list-documents';
+import { deleteDocument } from '../../use-cases/documents/delete-document';
 
 const MAX_BODY_SIZE = 10 * 1024 * 1024 + 1; // 10 MiB + 1 byte
 
@@ -80,6 +81,40 @@ export function createDocumentsRouter(
       200,
     );
   });
+
+  router.delete(
+    '/documents/:id',
+    requireAuth(deps),
+    requireRole(['patient'], deps),
+    async (c) => {
+      const patientId = c.get('userId');
+      const documentId = c.req.param('id');
+
+      const result = await deleteDocument(documentId, patientId, {
+        db: deps.db,
+        storage,
+      });
+
+      if (result.ok) {
+        return c.body(null, 204);
+      }
+
+      if (result.reason === 'not_found') {
+        return c.json({ error: 'DOCUMENT_NOT_FOUND' }, 404);
+      }
+      if (result.reason === 'forbidden') {
+        return c.json({ error: 'FORBIDDEN' }, 403);
+      }
+      return c.json(
+        {
+          error: 'DELETE_FAILED',
+          message:
+            'Document metadata removed but file could not be deleted from storage',
+        },
+        500,
+      );
+    },
+  );
 
   return router;
 }

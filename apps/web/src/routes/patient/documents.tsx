@@ -5,6 +5,7 @@ import { currentUserQueryOptions } from '../../features/auth/queries';
 import { getToken, clearToken } from '../../lib/auth-token';
 import { useDocuments } from '../../features/documents/use-documents';
 import { useUploadDocument } from '../../features/documents/use-upload-document';
+import { useDeleteDocument } from '../../features/documents/use-delete-document';
 import { DocumentList } from '../../features/documents/DocumentList';
 
 export const patientDocumentsRoute = createRoute({
@@ -32,6 +33,12 @@ export const patientDocumentsRoute = createRoute({
 function PatientDocumentsPage() {
   const { data: documents = [], isLoading } = useDocuments();
   const { mutate: upload, isPending, error } = useUploadDocument();
+  const {
+    mutate: remove,
+    variables: deletingId,
+    isPending: isDeleting,
+    error: deleteError,
+  } = useDeleteDocument();
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -66,8 +73,19 @@ function PatientDocumentsPage() {
         </p>
       )}
 
+      {deleteError && (
+        <p className="text-sm text-red-600">
+          Delete failed: {deleteError instanceof Error ? deleteError.message : 'Unknown error'}
+        </p>
+      )}
+
       <section className="rounded-lg border border-slate-200 p-6">
-        <DocumentList documents={documents} isLoading={isLoading} />
+        <DocumentList
+          documents={documents}
+          isLoading={isLoading}
+          onDelete={(id) => remove(id)}
+          deletingId={isDeleting ? deletingId ?? null : null}
+        />
       </section>
     </div>
   );

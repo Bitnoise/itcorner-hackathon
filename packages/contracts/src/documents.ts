@@ -15,6 +15,11 @@ export const documentErrorSchema = z.object({
   error: z.string(),
 });
 
+export const documentDeleteFailedSchema = z.object({
+  error: z.literal('DELETE_FAILED'),
+  message: z.string(),
+});
+
 export const documentsContract = c.router({
   upload: {
     method: 'POST',
@@ -34,6 +39,18 @@ export const documentsContract = c.router({
     path: '/documents',
     responses: {
       200: z.array(documentMetadataSchema),
+    },
+  },
+  delete: {
+    method: 'DELETE',
+    path: '/documents/:id',
+    pathParams: z.object({ id: z.string().uuid() }),
+    body: c.type<undefined>(),
+    responses: {
+      204: c.noBody(),
+      403: documentErrorSchema,
+      404: documentErrorSchema,
+      500: documentDeleteFailedSchema,
     },
   },
 });
