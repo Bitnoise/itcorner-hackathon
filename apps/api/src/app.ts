@@ -1,10 +1,23 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { healthRouter } from './routes/health';
+import { createAuthRouter } from './routes/auth/auth-router';
+import type { Db } from './infrastructure/db';
+import type { AppConfig } from './config';
+import type { Logger } from './lib/logger';
 
-export function createApp(): Hono {
+export interface AppDeps {
+  db: Db;
+  config: Pick<AppConfig, 'JWT_SECRET'>;
+  logger: Logger;
+}
+
+export function createApp(deps?: AppDeps): Hono {
   const app = new Hono();
   app.use('*', cors());
   app.route('/', healthRouter);
+  if (deps) {
+    app.route('/', createAuthRouter(deps));
+  }
   return app;
 }

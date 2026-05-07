@@ -49,7 +49,18 @@ export function verifyJwt(token: string, secret: string): JwtVerifyResult {
 
   let payload: JwtPayload;
   try {
-    payload = JSON.parse(base64UrlDecode(claims).toString()) as JwtPayload;
+    const parsed: unknown = JSON.parse(base64UrlDecode(claims).toString());
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof (parsed as Record<string, unknown>)['sub'] !== 'string' ||
+      typeof (parsed as Record<string, unknown>)['role'] !== 'string' ||
+      typeof (parsed as Record<string, unknown>)['iat'] !== 'number' ||
+      typeof (parsed as Record<string, unknown>)['exp'] !== 'number'
+    ) {
+      return { ok: false, reason: 'invalid' };
+    }
+    payload = parsed as JwtPayload;
   } catch {
     return { ok: false, reason: 'invalid' };
   }
