@@ -21,7 +21,7 @@ describeWithDb('Doctor profile routes (integration)', () => {
   let doctorUserId: string;
   let doctorToken: string;
   let patientUserId: string;
-  let _patientToken: string;
+  let patientToken: string;
 
   beforeAll(async () => {
     await db.delete(users).where(eq(users.email, 'doc.profile.doctor@example.com'));
@@ -54,7 +54,7 @@ describeWithDb('Doctor profile routes (integration)', () => {
       })
       .returning();
     patientUserId = patUser!.id;
-    _patientToken = signJwt({ sub: patientUserId, role: 'patient' }, JWT_SECRET);
+    patientToken = signJwt({ sub: patientUserId, role: 'patient' }, JWT_SECRET);
     await db.insert(patients).values({
       userId: patientUserId,
       firstName: 'Lisa',
@@ -222,6 +222,58 @@ describeWithDb('Doctor profile routes (integration)', () => {
       // The PII rule: the value must never appear in any log line.
       const allOutput = logLines.join('');
       expect(allOutput).not.toContain('Neurology');
+    });
+  });
+
+  describe('Auth guards on /doctors/me/profile', () => {
+    it('GET returns 401 without an Authorization header', async () => {
+      const app = makeApp();
+      const res = await app.request('/doctors/me/profile');
+      expect(res.status).toBe(401);
+    });
+
+    it('GET returns 403 for a patient JWT', async () => {
+      const app = makeApp();
+      const res = await app.request('/doctors/me/profile', {
+        headers: { Authorization: `Bearer ${patientToken}` },
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('PATCH returns 401 without an Authorization header', async () => {
+      const app = makeApp();
+      const res = await app.request('/doctors/me/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ specialization: 'Cardiology' }),
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('PATCH returns 403 for a patient JWT', async () => {
+      const app = makeApp();
+      const res = await app.request('/doctors/me/profile', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${patientToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ specialization: 'Cardiology' }),
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('PATCH returns 422 when the body contains an unknown key', async () => {
+      const app = makeApp();
+      const res = await app.request('/doctors/me/profile', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${doctorToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ specialization: 'OK', injected: 'nope' }),
+      });
+      expect(res.status).toBe(422);
     });
   });
 });
