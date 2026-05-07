@@ -2,13 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtemp, rm, readdir } from 'node:fs/promises';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { createApp } from '../../app';
 import { createDb } from '../../infrastructure/db';
 import { createLogger } from '../../lib/logger';
 import { signJwt } from '../../lib/jwt';
-import { users, documents } from '../../db/schema';
+import { users, documents, doctors, patients, documentShares } from '../../db/schema';
 
 const DATABASE_URL = process.env['DATABASE_URL'];
 const JWT_SECRET = 'test-secret-that-is-at-least-32-chars-long';
@@ -311,6 +311,335 @@ describeWithDb('Documents routes (integration)', () => {
         headers: { Authorization: `Bearer ${doctorToken}` },
       });
 
+      expect(res.status).toBe(403);
+    });
+  });
+});
+
+describeWithDb('Document sharing routes (integration)', () => {
+  const db = createDb(DATABASE_URL!);
+  const logger = createLogger({ sink: () => {} });
+  let tmpDir: string;
+
+  let patientAId: string;
+  let patientBId: string;
+  let doctorOneId: string;
+  let doctorTwoId: string;
+  let patientAToken: string;
+  let doctorOneToken: string;
+
+  let docByPatientA: string;
+  let docByPatientB: string;
+
+  async function cleanupUsers() {
+    for (const email of [
+      'share.patient.a@example.com',
+      'share.patient.b@example.com',
+      'share.doctor.one@example.com',
+      'share.doctor.two@example.com',
+    ]) {
+      await db.delete(users).where(eq(users.email, email));
+    }
+  }
+
+  beforeAll(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'doc-share-test-'));
+    await cleanupUsers();
+
+    const hash = await bcrypt.hash('password', 4);
+
+    const [pA] = await db
+      .insert(users)
+      .values({ email: 'share.patient.a@example.com', passwordHash: hash, role: 'patient' })
+      .returning();
+    patientAId = pA!.id;
+    await db.insert(patients).values({ userId: patientAId, firstName: 'Alice', lastName: 'Anders' });
+    patientAToken = signJwt({ sub: patientAId, role: 'patient' }, JWT_SECRET);
+
+    const [pB] = await db
+      .insert(users)
+      .values({ email: 'share.patient.b@example.com', passwordHash: hash, role: 'patient' })
+      .returning();
+    patientBId = pB!.id;
+    await db.insert(patients).values({ userId: patientBId, firstName: 'Bob', lastName: 'Brown' });
+
+    const [d1] = await db
+      .insert(users)
+      .values({ email: 'share.doctor.one@example.com', passwordHash: hash, role: 'doctor' })
+      .returning();
+    doctorOneId = d1!.id;
+    await db.insert(doctors).values({ userId: doctorOneId, firstName: 'Dora', lastName: 'Onealf' });
+    doctorOneToken = signJwt({ sub: doctorOneId, role: 'doctor' }, JWT_SECRET);
+
+    const [d2] = await db
+      .insert(users)
+      .values({ email: 'share.doctor.two@example.com', passwordHash: hash, role: 'doctor' })
+      .returning();
+    doctorTwoId = d2!.id;
+    await db.insert(doctors).values({ userId: doctorTwoId, firstName: 'Diane', lastName: 'Twostein' });
+
+    const [docA] = await db
+      .insert(documents)
+      .values({
+        patientId: patientAId,
+        filename: 'a-report.pdf',
+        mimeType: 'application/pdf',
+        size: 100,
+        storagePath: '/dev/null/a-report',
+      })
+      .returning();
+    docByPatientA = docA!.id;
+
+    const [docB] = await db
+      .insert(documents)
+      .values({
+        patientId: patientBId,
+        filename: 'b-report.pdf',
+        mimeType: 'application/pdf',
+        size: 100,
+        storagePath: '/dev/null/b-report',
+      })
+      .returning();
+    docByPatientB = docB!.id;
+  });
+
+  afterAll(async () => {
+    await cleanupUsers();
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeApp() {
+    return createApp({
+      db,
+      config: { JWT_SECRET, DOCUMENT_STORAGE_PATH: tmpDir },
+      logger,
+    });
+  }
+
+  // Reset shares between tests so each starts from a known state
+  async function clearSharesFor(documentId: string) {
+    await db.delete(documentShares).where(eq(documentShares.documentId, documentId));
+  }
+
+  describe('GET /documents/:id/shares', () => {
+    it('returns 200 with all doctors and hasAccess flags reflecting current state', async () => {
+      await clearSharesFor(docByPatientA);
+      // Pre-grant access to doctorOne, leave doctorTwo without
+      await db.insert(documentShares).values({ documentId: docByPatientA, doctorId: doctorOneId });
+
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientA}/shares`, {
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Array<{ doctorId: string; displayName: string; hasAccess: boolean }>;
+
+      const byId = new Map(body.map((row) => [row.doctorId, row]));
+      const one = byId.get(doctorOneId);
+      const two = byId.get(doctorTwoId);
+      expect(one).toBeDefined();
+      expect(one?.hasAccess).toBe(true);
+      expect(one?.displayName).toBe('Dora Onealf');
+      expect(two).toBeDefined();
+      expect(two?.hasAccess).toBe(false);
+      expect(two?.displayName).toBe('Diane Twostein');
+    });
+
+    it('returns 404 DOCUMENT_NOT_FOUND for an unknown document id', async () => {
+      const unknownId = '00000000-0000-4000-8000-000000000000';
+      const app = makeApp();
+      const res = await app.request(`/documents/${unknownId}/shares`, {
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('DOCUMENT_NOT_FOUND');
+    });
+
+    it('returns 403 when caller does not own the document', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientB}/shares`, {
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('FORBIDDEN');
+    });
+
+    it('returns 401 without a JWT', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientA}/shares`);
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 with a doctor JWT', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientA}/shares`, {
+        headers: { Authorization: `Bearer ${doctorOneToken}` },
+      });
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe('PUT /documents/:id/shares/:doctorId', () => {
+    it('grants access and returns 200; second call is idempotent (no duplicate row)', async () => {
+      await clearSharesFor(docByPatientA);
+      const app = makeApp();
+
+      const res1 = await app.request(`/documents/${docByPatientA}/shares/${doctorOneId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res1.status).toBe(200);
+
+      const res2 = await app.request(`/documents/${docByPatientA}/shares/${doctorOneId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res2.status).toBe(200);
+
+      const rows = await db
+        .select()
+        .from(documentShares)
+        .where(
+          and(
+            eq(documentShares.documentId, docByPatientA),
+            eq(documentShares.doctorId, doctorOneId),
+          ),
+        );
+      expect(rows).toHaveLength(1);
+    });
+
+    it('returns 404 DOCTOR_NOT_FOUND when the target user is not a doctor', async () => {
+      const app = makeApp();
+      // patientBId belongs to a patient, not a doctor
+      const res = await app.request(`/documents/${docByPatientA}/shares/${patientBId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('DOCTOR_NOT_FOUND');
+    });
+
+    it('returns 404 DOCUMENT_NOT_FOUND for an unknown document id', async () => {
+      const unknownId = '00000000-0000-4000-8000-000000000001';
+      const app = makeApp();
+      const res = await app.request(`/documents/${unknownId}/shares/${doctorOneId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('DOCUMENT_NOT_FOUND');
+    });
+
+    it('returns 403 when caller does not own the document', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientB}/shares/${doctorOneId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 401 without a JWT', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientA}/shares/${doctorOneId}`, {
+        method: 'PUT',
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 with a doctor JWT', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientA}/shares/${doctorOneId}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${doctorOneToken}` },
+      });
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe('DELETE /documents/:id/shares/:doctorId', () => {
+    it('revokes access and returns 200; calling again with no existing share also returns 200 (idempotent)', async () => {
+      await clearSharesFor(docByPatientA);
+      await db.insert(documentShares).values({ documentId: docByPatientA, doctorId: doctorOneId });
+
+      const app = makeApp();
+
+      const res1 = await app.request(`/documents/${docByPatientA}/shares/${doctorOneId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res1.status).toBe(200);
+
+      const rows = await db
+        .select()
+        .from(documentShares)
+        .where(
+          and(
+            eq(documentShares.documentId, docByPatientA),
+            eq(documentShares.doctorId, doctorOneId),
+          ),
+        );
+      expect(rows).toHaveLength(0);
+
+      const res2 = await app.request(`/documents/${docByPatientA}/shares/${doctorOneId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res2.status).toBe(200);
+    });
+
+    it('returns 404 DOCTOR_NOT_FOUND when the target user is not a doctor', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientA}/shares/${patientBId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('DOCTOR_NOT_FOUND');
+    });
+
+    it('returns 404 DOCUMENT_NOT_FOUND for an unknown document id', async () => {
+      const unknownId = '00000000-0000-4000-8000-000000000002';
+      const app = makeApp();
+      const res = await app.request(`/documents/${unknownId}/shares/${doctorOneId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('DOCUMENT_NOT_FOUND');
+    });
+
+    it('returns 403 when caller does not own the document', async () => {
+      const app = makeApp();
+      // Patient A's token tries to revoke a share on patient B's doc
+      const res = await app.request(`/documents/${docByPatientB}/shares/${doctorOneId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${patientAToken}` },
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 401 without a JWT', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientA}/shares/${doctorOneId}`, {
+        method: 'DELETE',
+      });
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 with a doctor JWT', async () => {
+      const app = makeApp();
+      const res = await app.request(`/documents/${docByPatientA}/shares/${doctorOneId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${doctorOneToken}` },
+      });
       expect(res.status).toBe(403);
     });
   });
