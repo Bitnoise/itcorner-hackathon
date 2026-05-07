@@ -70,6 +70,24 @@ test.describe('Authentication', () => {
     await page.goto('/patient');
 
     await page.waitForURL('**/login', { timeout: 5_000 });
+    await expect(page.getByText(/session has expired/i)).not.toBeVisible();
+  });
+
+  test('tampered token triggers redirect to /login with session-expired toast', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(PATIENT_EMAIL);
+    await page.getByLabel('Password').fill(PATIENT_PASSWORD);
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.waitForURL('**/patient');
+
+    await page.evaluate(() => {
+      localStorage.setItem('medbridge_token', 'tampered.token.value');
+    });
+
+    await page.goto('/patient');
+
+    await page.waitForURL('**/login', { timeout: 5_000 });
+    await expect(page.getByText(/session has expired/i)).toBeVisible({ timeout: 5_000 });
   });
 
   test('doctor redirected away from /patient to /doctor', async ({ page }) => {

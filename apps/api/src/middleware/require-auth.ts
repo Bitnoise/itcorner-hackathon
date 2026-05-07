@@ -22,6 +22,9 @@ export function requireAuth(deps: {
     }
 
     const token = authHeader.slice(7);
+    if (!token || token[0] === ' ') {
+      return c.json({ error: 'Malformed Authorization header' }, 401);
+    }
     const result = verifyJwt(token, deps.config.JWT_SECRET);
 
     if (!result.ok) {
