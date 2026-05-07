@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
@@ -23,6 +24,10 @@ if (existsSync(rootEnv)) {
 checkEnv();
 const config = loadConfig();
 const logger = createLogger();
+
+// Ensure document storage directory exists on startup
+mkdirSync(config.DOCUMENT_STORAGE_PATH, { recursive: true });
+
 const db = createDb(config.DATABASE_URL);
 const app = createApp({ db, config, logger });
 

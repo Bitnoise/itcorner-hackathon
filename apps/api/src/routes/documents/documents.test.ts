@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { createApp } from '../../app';
@@ -27,6 +27,11 @@ describeWithDb('Documents routes (integration)', () => {
 
   beforeAll(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'doc-routes-test-'));
+
+    // Clean up any leftover test users from previous runs
+    await db.delete(users).where(eq(users.email, 'doc.patient@example.com'));
+    await db.delete(users).where(eq(users.email, 'doc.doctor@example.com'));
+    await db.delete(users).where(eq(users.email, 'doc.empty@example.com'));
 
     const hash = await bcrypt.hash('password', 4);
 
@@ -107,17 +112,21 @@ describeWithDb('Documents routes (integration)', () => {
       const app = makeApp();
       const formData = makePdfFormData('disk-test.pdf', 512);
 
+      // Record files before upload
+      const filesBefore = await readdir(tmpDir);
+
       const res = await app.request('/documents', {
         method: 'POST',
         headers: { Authorization: `Bearer ${patientToken}` },
         body: formData,
       });
       expect(res.status).toBe(201);
-      const body = await res.json() as { id: string };
 
-      // File should exist on disk at a UUID-named path in tmpDir
-      const fileStat = await stat(join(tmpDir, body.id));
-      expect(fileStat.isFile()).toBe(true);
+      // A new UUID-named file should have been created
+      const filesAfter = await readdir(tmpDir);
+      const newFiles = filesAfter.filter((f) => !filesBefore.includes(f));
+      expect(newFiles).toHaveLength(1);
+      expect(newFiles[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
     });
   });
 
@@ -201,8 +210,9 @@ describeWithDb('Documents routes (integration)', () => {
   // AC 5: GET /documents returns list
   describe('AC 5: GET /documents', () => {
     it('returns 200 with empty array when no documents', async () => {
-      // Create a fresh user with no docs
+      // Create a fresh user with no docs (clean up first if exists)
       const hash = await bcrypt.hash('password', 4);
+      await db.delete(users).where(eq(users.email, 'doc.empty@example.com'));
       const [freshUser] = await db
         .insert(users)
         .values({ email: 'doc.empty@example.com', passwordHash: hash, role: 'patient' })
@@ -223,7 +233,7 @@ describeWithDb('Documents routes (integration)', () => {
     });
 
     it('returns 200 with docs ordered by uploadedAt desc', async () => {
-      // Upload two docs via the API so they get insertd
+      // Upload two docs via the API so they get inserted
       const app = makeApp();
 
       const form1 = makePdfFormData('first.pdf', 100);

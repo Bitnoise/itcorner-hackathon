@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import bcrypt from 'bcryptjs';
+import { tmpdir } from 'node:os';
 import { eq } from 'drizzle-orm';
 import { createApp } from '../../app';
 import { createDb } from '../../infrastructure/db';
@@ -10,13 +11,14 @@ import { users, patients } from '../../db/schema';
 const DATABASE_URL = process.env['DATABASE_URL'];
 const JWT_SECRET = 'test-secret-that-is-at-least-32-chars-long';
 const OTHER_SECRET = 'other-secret-that-is-at-least-32-chars-long';
+const TEST_CONFIG = { JWT_SECRET, DOCUMENT_STORAGE_PATH: tmpdir() };
 
 const describeWithDb = DATABASE_URL ? describe : describe.skip;
 
 describeWithDb('Auth routes (integration)', () => {
   const db = createDb(DATABASE_URL!);
   const logger = createLogger({ sink: () => {} });
-  const app = createApp({ db, config: { JWT_SECRET }, logger });
+  const app = createApp({ db, config: TEST_CONFIG, logger });
 
   let testUserId: string;
 
@@ -119,7 +121,7 @@ describeWithDb('Auth routes (integration)', () => {
 
     it('returns 503 when the database is unreachable', async () => {
       const brokenDb = createDb('postgresql://bad:bad@localhost:9999/notexist');
-      const brokenApp = createApp({ db: brokenDb, config: { JWT_SECRET }, logger });
+      const brokenApp = createApp({ db: brokenDb, config: TEST_CONFIG, logger });
 
       const res = await brokenApp.request('/auth/login', {
         method: 'POST',
@@ -247,7 +249,7 @@ describeWithDb('Auth routes (integration)', () => {
     it('emits auth.login.success with userId and role on successful login', async () => {
       const logLines: string[] = [];
       const capLogger = createLogger({ sink: (line) => logLines.push(line) });
-      const capApp = createApp({ db, config: { JWT_SECRET }, logger: capLogger });
+      const capApp = createApp({ db, config: TEST_CONFIG, logger: capLogger });
 
       await capApp.request('/auth/login', {
         method: 'POST',
@@ -265,7 +267,7 @@ describeWithDb('Auth routes (integration)', () => {
     it('emits auth.login.failed without plaintext email on wrong credentials', async () => {
       const logLines: string[] = [];
       const capLogger = createLogger({ sink: (line) => logLines.push(line) });
-      const capApp = createApp({ db, config: { JWT_SECRET }, logger: capLogger });
+      const capApp = createApp({ db, config: TEST_CONFIG, logger: capLogger });
 
       await capApp.request('/auth/login', {
         method: 'POST',
@@ -282,7 +284,7 @@ describeWithDb('Auth routes (integration)', () => {
     it('emits auth.token.expired when an expired token is used', async () => {
       const logLines: string[] = [];
       const capLogger = createLogger({ sink: (line) => logLines.push(line) });
-      const capApp = createApp({ db, config: { JWT_SECRET }, logger: capLogger });
+      const capApp = createApp({ db, config: TEST_CONFIG, logger: capLogger });
       const expiredToken = signJwt({ sub: testUserId, role: 'patient' }, JWT_SECRET, -1);
 
       await capApp.request('/auth/me', {
@@ -296,7 +298,7 @@ describeWithDb('Auth routes (integration)', () => {
     it('emits auth.token.invalid when a tampered token is used', async () => {
       const logLines: string[] = [];
       const capLogger = createLogger({ sink: (line) => logLines.push(line) });
-      const capApp = createApp({ db, config: { JWT_SECRET }, logger: capLogger });
+      const capApp = createApp({ db, config: TEST_CONFIG, logger: capLogger });
 
       await capApp.request('/auth/me', {
         headers: { Authorization: 'Bearer header.payload.tampered' },
