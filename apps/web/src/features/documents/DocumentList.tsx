@@ -3,6 +3,8 @@ import type { DocumentItem } from './use-documents';
 interface DocumentListProps {
   documents: DocumentItem[];
   isLoading?: boolean;
+  onDelete?: (id: string) => void;
+  deletingId?: string | null;
 }
 
 function formatBytes(bytes: number): string {
@@ -21,7 +23,12 @@ function formatDate(isoString: string): string {
   });
 }
 
-export function DocumentList({ documents, isLoading }: DocumentListProps) {
+export function DocumentList({
+  documents,
+  isLoading,
+  onDelete,
+  deletingId,
+}: DocumentListProps) {
   if (isLoading) {
     return <p className="text-sm text-slate-500">Loading documents...</p>;
   }
@@ -40,6 +47,16 @@ export function DocumentList({ documents, isLoading }: DocumentListProps) {
               {doc.mimeType} &middot; {formatBytes(doc.size)} &middot; {formatDate(doc.uploadedAt)}
             </p>
           </div>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(doc.id)}
+              disabled={deletingId === doc.id}
+              className="rounded border border-red-300 px-3 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              {deletingId === doc.id ? 'Deleting...' : 'Delete'}
+            </button>
+          )}
         </li>
       ))}
     </ul>

@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtemp, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, readdir, access } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { createApp } from '../../app';
 import { createDb } from '../../infrastructure/db';
 import { createLogger } from '../../lib/logger';
 import { signJwt } from '../../lib/jwt';
-import { users, documents } from '../../db/schema';
+import { users, documents, documentShares } from '../../db/schema';
 
 const DATABASE_URL = process.env['DATABASE_URL'];
 const JWT_SECRET = 'test-secret-that-is-at-least-32-chars-long';
@@ -54,6 +55,7 @@ describeWithDb('Documents routes (integration)', () => {
     await db.delete(documents).where(eq(documents.patientId, patientUserId));
     await db.delete(users).where(eq(users.id, patientUserId));
     await db.delete(users).where(eq(users.id, doctorUserId));
+    await db.delete(users).where(eq(users.email, 'doc.other-patient@example.com'));
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -312,6 +314,217 @@ describeWithDb('Documents routes (integration)', () => {
       });
 
       expect(res.status).toBe(403);
+    });
+  });
+
+  // AC 7 (Slice 2): DELETE /documents/:id — owner happy path
+  describe('AC 7: DELETE /documents/:id by owner', () => {
+    it('returns 204 and removes the documents row and disk file', async () => {
+      const app = makeApp();
+
+      // Upload a document
+      const uploadForm = makePdfFormData('to-delete.pdf', 256);
+      const uploadRes = await app.request('/documents', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${patientToken}` },
+        body: uploadForm,
+      });
+      expect(uploadRes.status).toBe(201);
+      const uploaded = await uploadRes.json() as { id: string };
+
+      // Find the storage filename for this document so we can verify it's gone
+      const [docRow] = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, uploaded.id));
+      expect(docRow).toBeDefined();
+      const storedPath = join(tmpDir, docRow!.storagePath);
+      // Sanity: file exists before delete
+      await expect(access(storedPath, constants.F_OK)).resolves.toBeUndefined();
+
+      // DELETE the document
+      const delRes = await app.request(`/documents/${uploaded.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${patientToken}` },
+      });
+
+      expect(delRes.status).toBe(204);
+
+      // documents row is gone
+      const remaining = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, uploaded.id));
+      expect(remaining).toHaveLength(0);
+
+      // file on disk is gone
+      await expect(access(storedPath, constants.F_OK)).rejects.toThrow();
+    });
+
+    it('removes associated document_shares rows atomically with the document', async () => {
+      const app = makeApp();
+
+      // Upload a document as the patient
+      const uploadForm = makePdfFormData('shared-and-deleted.pdf', 128);
+      const uploadRes = await app.request('/documents', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${patientToken}` },
+        body: uploadForm,
+      });
+      expect(uploadRes.status).toBe(201);
+      const uploaded = await uploadRes.json() as { id: string };
+
+      // Manually insert a share row (sharing endpoints land in slice 3)
+      await db.insert(documentShares).values({
+        documentId: uploaded.id,
+        doctorId: doctorUserId,
+      });
+
+      // Sanity: share exists
+      const sharesBefore = await db
+        .select()
+        .from(documentShares)
+        .where(eq(documentShares.documentId, uploaded.id));
+      expect(sharesBefore).toHaveLength(1);
+
+      // DELETE the document
+      const delRes = await app.request(`/documents/${uploaded.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${patientToken}` },
+      });
+      expect(delRes.status).toBe(204);
+
+      // Both rows are gone
+      const docsAfter = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, uploaded.id));
+      expect(docsAfter).toHaveLength(0);
+
+      const sharesAfter = await db
+        .select()
+        .from(documentShares)
+        .where(eq(documentShares.documentId, uploaded.id));
+      expect(sharesAfter).toHaveLength(0);
+    });
+
+    it('returns 500 DELETE_FAILED when the disk file is missing after txn commit', async () => {
+      const app = makeApp();
+
+      // Upload a document
+      const uploadForm = makePdfFormData('disk-fail.pdf', 64);
+      const uploadRes = await app.request('/documents', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${patientToken}` },
+        body: uploadForm,
+      });
+      expect(uploadRes.status).toBe(201);
+      const uploaded = await uploadRes.json() as { id: string };
+
+      // Look up the storage path, then remove the file out-of-band so the
+      // disk-side delete will fail after the DB transaction commits.
+      const [docRow] = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, uploaded.id));
+      const storedPath = join(tmpDir, docRow!.storagePath);
+      await rm(storedPath, { force: true });
+
+      const delRes = await app.request(`/documents/${uploaded.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${patientToken}` },
+      });
+
+      expect(delRes.status).toBe(500);
+      const body = await delRes.json() as { error: string; message: string };
+      expect(body.error).toBe('DELETE_FAILED');
+      expect(body.message).toBe(
+        'Document metadata removed but file could not be deleted from storage',
+      );
+
+      // The DB row should still be gone — committed txn is the source of truth
+      const remaining = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, uploaded.id));
+      expect(remaining).toHaveLength(0);
+    });
+
+    it('returns 403 when called by a different patient', async () => {
+      const app = makeApp();
+
+      // Upload a document as the original patient
+      const uploadForm = makePdfFormData('not-yours.pdf', 64);
+      const uploadRes = await app.request('/documents', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${patientToken}` },
+        body: uploadForm,
+      });
+      expect(uploadRes.status).toBe(201);
+      const uploaded = await uploadRes.json() as { id: string };
+
+      // Create another patient
+      const hash = await bcrypt.hash('password', 4);
+      await db.delete(users).where(eq(users.email, 'doc.other-patient@example.com'));
+      const [otherPatient] = await db
+        .insert(users)
+        .values({
+          email: 'doc.other-patient@example.com',
+          passwordHash: hash,
+          role: 'patient',
+        })
+        .returning();
+      const otherToken = signJwt(
+        { sub: otherPatient!.id, role: 'patient' },
+        JWT_SECRET,
+      );
+
+      const delRes = await app.request(`/documents/${uploaded.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${otherToken}` },
+      });
+
+      expect(delRes.status).toBe(403);
+
+      // Document still exists
+      const remaining = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, uploaded.id));
+      expect(remaining).toHaveLength(1);
+
+      await db.delete(users).where(eq(users.id, otherPatient!.id));
+    });
+
+    it('returns 404 DOCUMENT_NOT_FOUND for an unknown id', async () => {
+      const app = makeApp();
+      const fakeId = '00000000-0000-4000-8000-000000000000';
+
+      const delRes = await app.request(`/documents/${fakeId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${patientToken}` },
+      });
+
+      expect(delRes.status).toBe(404);
+      const body = await delRes.json() as { error: string };
+      expect(body.error).toBe('DOCUMENT_NOT_FOUND');
+    });
+
+    it('returns 401 without a JWT', async () => {
+      const app = makeApp();
+      const fakeId = '00000000-0000-4000-8000-000000000001';
+      const delRes = await app.request(`/documents/${fakeId}`, { method: 'DELETE' });
+      expect(delRes.status).toBe(401);
+    });
+
+    it('returns 403 with a doctor JWT', async () => {
+      const app = makeApp();
+      const fakeId = '00000000-0000-4000-8000-000000000002';
+      const delRes = await app.request(`/documents/${fakeId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${doctorToken}` },
+      });
+      expect(delRes.status).toBe(403);
     });
   });
 });
