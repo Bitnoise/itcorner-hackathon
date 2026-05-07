@@ -95,4 +95,28 @@ test.describe('Authentication', () => {
 
     await page.waitForURL('**/patient', { timeout: 5_000 });
   });
+
+  test('logged-in doctor visiting /login is redirected to /doctor', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(DOCTOR_EMAIL);
+    await page.getByLabel('Password').fill(DOCTOR_PASSWORD);
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.waitForURL('**/doctor');
+
+    await page.goto('/login');
+
+    await page.waitForURL('**/doctor', { timeout: 5_000 });
+  });
+
+  test('logged-in patient visiting /login is redirected to /patient', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(PATIENT_EMAIL);
+    await page.getByLabel('Password').fill(PATIENT_PASSWORD);
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await page.waitForURL('**/patient');
+
+    await page.goto('/login');
+
+    await page.waitForURL('**/patient', { timeout: 5_000 });
+  });
 });
