@@ -12,7 +12,7 @@ export interface Logger {
   error(event: string, context?: LogContext): void;
 }
 
-const REDACTED_FIELDS = new Set(['password', 'token']);
+const REDACTED_FIELDS = new Set(['password', 'password_hash', 'token', 'authorization', 'jwt']);
 const REDACTED_VALUE = '[REDACTED]';
 
 function redact(value: unknown): unknown {
